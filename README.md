@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kimsy
 
-## Getting Started
+Kimsy turns a regulated firm's existing compliance risk framework into an AI-assisted assessment and review workflow. It supports organization-wide first-line-led and compliance-led operating models without allowing AI to approve assessment decisions.
 
-First, run the development server:
+## Included vertical slice
+
+- Framework import for PDF, DOCX, XLSX, and CSV with stable source locators
+- Draft validation and immutable framework publication model
+- Periodic business-unit assessment cycles
+- First-line-led and compliance-led workflows
+- Plain-language fact gathering and optional information requests
+- Provider-neutral AI interface with OpenAI structured outputs
+- Deterministic offline AI fallback for local evaluation
+- Human acceptance, evidence review, exceptions, and finalization gates
+- Management dashboard and generated PDF report
+- Conditional Supabase magic-link authentication
+- Supabase schema with tenant keys, RLS, private storage, background jobs, and append-only audit history
+
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`. With no environment variables, the application runs as an interactive seeded product demo and persists changes in browser local storage.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env.local` to activate external services. When Supabase variables are present, invite-only magic-link authentication is enforced. When `OPENAI_API_KEY` is present, the OpenAI adapter replaces the deterministic local assessment provider.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Database
 
-## Learn More
+Create an EU-region Supabase project and apply [001_initial.sql](./supabase/migrations/001_initial.sql). Add the first user to `organization_members` after creating the organization and accepting the authentication invite.
 
-To learn more about Next.js, take a look at the following resources:
+## Validation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm run test:e2e
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The AI integration uses the Responses API with a strict Zod schema. Each run records provider, model, prompt version, output, status, and input hash in the production data model. Model output can only reference risk scenario IDs supplied from the assessment's published framework version.
