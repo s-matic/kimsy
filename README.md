@@ -1,35 +1,35 @@
 # Kimsy
 
-Kimsy turns a regulated firm's existing compliance risk framework into an AI-assisted assessment and review workflow. It supports organization-wide first-line-led and compliance-led operating models without allowing AI to approve assessment decisions.
+Kimsy replaces a compliance risk spreadsheet with an AI-assisted assessment conversation and a structured, editable risk register.
 
-## Included vertical slice
-
-- Framework import for PDF, DOCX, XLSX, and CSV with stable source locators
-- Draft validation and immutable framework publication model
-- Periodic business-unit assessment cycles
-- First-line-led and compliance-led workflows
-- Plain-language fact gathering and optional information requests
-- Provider-neutral AI interface with OpenAI structured outputs
-- Deterministic offline AI fallback for local evaluation
-- Human acceptance, evidence review, exceptions, and finalization gates
-- Management dashboard and generated PDF report
-- Conditional Supabase magic-link authentication
-- Supabase schema with tenant keys, RLS, private storage, background jobs, and append-only audit history
+The product is designed first for one compliance or risk professional. During onboarding, the user describes or uploads their organization structure, risk scenarios, assessment fields, and scoring methodology. Kimsy proposes a configuration for confirmation rather than imposing a generic GRC model.
 
 ## Run locally
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. With no environment variables, the application runs as an interactive seeded product demo and persists changes in browser local storage.
+Open `http://localhost:3000`.
 
-Copy `.env.example` to `.env.local` to activate external services. When Supabase variables are present, invite-only magic-link authentication is enforced. When `OPENAI_API_KEY` is present, the OpenAI adapter replaces the deterministic local assessment provider.
+`OPENAI_API_KEY` is required for AI onboarding and assessment conversations. It remains server-side. Without a key, the complete sample workspace can still be explored from the first screen.
 
-## Database
+## Included local-first slice
 
-Create an EU-region Supabase project and apply [001_initial.sql](./supabase/migrations/001_initial.sql). Add the first user to `organization_members` after creating the organization and accepting the authentication invite.
+- Conversational onboarding with text and multi-file input
+- PDF, DOCX, XLSX, CSV, PNG, JPEG, and WebP sources
+- Editable organization hierarchy and customer risk-scenario library
+- Typed custom assessment fields
+- Transparent chained matrix and weighted-threshold calculations
+- One assessment conversation per organizational unit and period
+- AI register proposals that require explicit human application
+- Spreadsheet-style risk register with inline editing
+- Optional whole-assessment reviewer mode
+- Browser persistence using versioned local storage
+
+Production authentication, Supabase persistence, evidence governance, notifications, exports, and management reporting are intentionally outside this focused slice.
 
 ## Validation
 
@@ -40,5 +40,3 @@ npm test
 npm run build
 npm run test:e2e
 ```
-
-The AI integration uses the Responses API with a strict Zod schema. Each run records provider, model, prompt version, output, status, and input hash in the production data model. Model output can only reference risk scenario IDs supplied from the assessment's published framework version.

@@ -1,156 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CalendarDays,
-  CheckCircle2,
-  CircleDot,
-  Clock3,
-  FileWarning,
-  TrendingUp,
-} from "lucide-react";
-import { Badge, Metric, PageHeader, Panel, PanelHeader, Progress } from "@/components/ui";
-import { ratingTone } from "@/lib/risk";
+import { ArrowRight, CheckCircle2, Clock3, MessageSquareText, Plus, Sparkles } from "lucide-react";
+import { Onboarding } from "@/components/onboarding";
+import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { useKimsy } from "@/lib/store";
+import type { AssessmentStatus } from "@/lib/types";
 
-function statusBadge(status: string) {
-  if (status === "FINALIZED") return <Badge tone="success">Finalized</Badge>;
-  if (status === "IN_REVIEW") return <Badge tone="warning">In review</Badge>;
-  if (status === "AI_DRAFT_READY") return <Badge tone="info">AI draft ready</Badge>;
-  return <Badge>Fact gathering</Badge>;
+function statusBadge(status: AssessmentStatus) {
+  if (status === "APPROVED" || status === "COMPLETED") return <Badge tone="success">{status === "APPROVED" ? "Approved" : "Complete"}</Badge>;
+  if (status === "READY_FOR_REVIEW") return <Badge tone="warning">Ready for review</Badge>;
+  if (status === "RETURNED") return <Badge tone="danger">Returned</Badge>;
+  return <Badge>Draft</Badge>;
 }
 
 export default function Home() {
-  const { state } = useKimsy();
-  const active = state.assessments.filter((assessment) => assessment.status !== "FINALIZED");
-  const openExceptions = state.assessments.flatMap((assessment) => assessment.exceptions).filter((item) => item.status === "OPEN");
-  const scenarios = state.assessments.flatMap((assessment) => assessment.scenarioAssessments);
-  const breaches = scenarios.filter((scenario) => scenario.relevant && !scenario.withinAppetite);
+  const { state, hydrated } = useKimsy();
+  if (!hydrated) return null;
+  if (!state.onboarded) return <Onboarding />;
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Compliance risk oversight"
-        title="Good morning, Jordan"
-        description="A focused view of assessments, exceptions, and material changes requiring attention."
-        actions={
-          <Link href="/assessments/new" className="inline-flex h-9 items-center gap-2 rounded-[5px] border border-[#0f766e] bg-[#0f766e] px-3.5 text-sm font-semibold text-white hover:bg-[#0b625c]">
-            New assessment
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        }
-      />
+  const latest = state.assessments[0];
+  const unitName = (unitId: string) => state.configuration.units.find((unit) => unit.id === unitId)?.name ?? "Unknown unit";
 
-      <Panel className="grid overflow-hidden sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Active assessments" value={active.length} detail="Across 2 business units" />
-        <Metric label="Open exceptions" value={openExceptions.length} detail="3 require compliance judgment" tone="danger" />
-        <Metric label="Outside appetite" value={breaches.length} detail="1 material increase this period" tone="danger" />
-        <Metric label="Evidence coverage" value="76%" detail="Up 8 points since last review" tone="success" />
-      </Panel>
+  return <div className="space-y-6">
+    <PageHeader eyebrow="Your workspace" title={`Welcome back, ${state.configuration.review.assessorName.split(" ")[0] || "there"}`} description="Start with a conversation. Kimsy turns your notes and source material into register changes you can inspect before applying." actions={<Link href="/assessments/new" className="inline-flex h-9 items-center gap-2 rounded-[5px] border border-[#0f766e] bg-[#0f766e] px-3.5 text-sm font-semibold text-white hover:bg-[#0b625c]"><Plus className="h-4 w-4" />New assessment</Link>} />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,.8fr)]">
-        <Panel className="min-w-0 overflow-hidden">
-          <PanelHeader
-            title="Assessment portfolio"
-            description="Current assessment cycles and completion"
-            action={<Link href="/assessments" className="text-xs font-semibold text-[#0f766e] hover:underline">View all</Link>}
-          />
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-[#e2e7e5] bg-[#f8faf9] text-[10px] font-bold uppercase text-[#71807a]">
-                  <th className="px-5 py-3">Business unit</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Owner</th>
-                  <th className="px-4 py-3">Progress</th>
-                  <th className="px-5 py-3 text-right">Due</th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.assessments.map((assessment) => (
-                  <tr key={assessment.id} className="border-b border-[#e7ebe9] last:border-b-0 hover:bg-[#fafcfb]">
-                    <td className="px-5 py-4">
-                      <Link href={`/assessments/${assessment.id}`} className="text-sm font-semibold text-[#1c2824] hover:text-[#0f766e]">{assessment.businessUnit}</Link>
-                      <p className="mt-1 text-[11px] text-[#77837e]">{assessment.reference} · {assessment.period}</p>
-                    </td>
-                    <td className="px-4 py-4">{statusBadge(assessment.status)}</td>
-                    <td className="px-4 py-4 text-xs text-[#4d5b56]">{assessment.owner}</td>
-                    <td className="w-44 px-4 py-4"><Progress value={assessment.completion} /></td>
-                    <td className="px-5 py-4 text-right text-xs text-[#4d5b56]">{assessment.dueDate}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
+    {latest && <Panel className="overflow-hidden border-[#b8d8d1] bg-[linear-gradient(110deg,#f1faf7_0%,#ffffff_58%)]"><div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between lg:p-6"><div className="flex items-start gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[9px] bg-[#0f766e] text-white"><Sparkles className="h-5 w-5" /></div><div><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-bold uppercase tracking-[0.1em] text-[#0f766e]">Continue where you left off</p>{statusBadge(latest.status)}</div><h2 className="mt-1.5 text-xl font-semibold text-[#17231f]">{unitName(latest.unitId)}</h2><p className="mt-1 text-sm text-[#65736d]">{latest.period} · {latest.rows.filter((row) => row.applicable).length} applicable scenarios · Updated {latest.updatedAt}</p></div></div><Link href={`/assessments/${latest.id}`} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-[6px] border border-[#0f766e] bg-[#0f766e] px-4 text-sm font-semibold text-white">Open conversation<ArrowRight className="h-4 w-4" /></Link></div></Panel>}
 
-        <Panel>
-          <PanelHeader title="Your priority actions" description="Ordered by urgency and impact" />
-          <div className="divide-y divide-[#e7ebe9]">
-            {state.tasks.filter((task) => !task.complete).map((task) => (
-              <div key={task.id} className="flex gap-3 px-4 py-4 sm:px-5">
-                <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] ${task.priority === "High" ? "bg-[#fff0ee] text-[#b42318]" : "bg-[#fff7df] text-[#8a6417]"}`}>
-                  {task.priority === "High" ? <AlertTriangle className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold leading-5 text-[#26322e]">{task.title}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[#76827d]">{task.context}</p>
-                </div>
-                <span className="text-[11px] font-semibold text-[#825b15]">{task.due}</span>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Panel>
-          <PanelHeader title="Exposure requiring attention" description="Relevant scenarios outside appetite or materially changed" />
-          <div className="divide-y divide-[#e7ebe9]">
-            {breaches.map((scenario) => {
-              const risk = state.frameworkVersions[0].scenarios.find((item) => item.id === scenario.scenarioId);
-              return (
-                <div key={scenario.id} className="flex items-center gap-4 px-5 py-4">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[4px] bg-[#fff0ee] text-[#b42318]"><FileWarning className="h-4 w-4" /></div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-[#26322e]">{risk?.title}</p>
-                    <p className="mt-0.5 text-[11px] text-[#78847f]">{risk?.code} · {risk?.category}</p>
-                  </div>
-                  <Badge tone={ratingTone(scenario.proposedRating)}>{scenario.proposedRating}</Badge>
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
-
-        <Panel>
-          <PanelHeader title="Recent material changes" description="Business changes tracked for reassessment" />
-          <div className="divide-y divide-[#e7ebe9]">
-            {state.changes.map((change) => (
-              <div key={change.id} className="flex gap-4 px-5 py-4">
-                <div className="mt-0.5 text-[#0f766e]">{change.impactStatus === "Assessed" ? <CheckCircle2 className="h-5 w-5" /> : <CircleDot className="h-5 w-5" />}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-[#26322e]">{change.title}</p>
-                    <Badge tone={change.impactStatus === "Assessed" ? "success" : "warning"}>{change.impactStatus}</Badge>
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-[#687670]">{change.detail}</p>
-                  <p className="mt-1.5 text-[11px] text-[#87918d]">{change.businessUnit} · {change.recordedAt}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      </div>
-
-      <div className="flex items-center gap-2 text-[11px] text-[#76837e]">
-        <TrendingUp className="h-3.5 w-3.5 text-[#0f766e]" />
-        Portfolio data last recalculated today at 09:42 using framework v4.2.
-        <CalendarDays className="ml-2 h-3.5 w-3.5" />
-        Next scheduled review: 28 Aug 2026.
-      </div>
-    </div>
-  );
+    <Panel>
+      <PanelHeader title="Assessments" description="One focused conversation for each organizational unit and period" action={state.assessments.length > 0 ? <Link href="/register" className="text-xs font-semibold text-[#0f766e] hover:underline">Open full register</Link> : undefined} />
+      {state.assessments.length === 0 ? <EmptyState icon={<MessageSquareText className="h-5 w-5" />} title="Start your first assessment" description="Choose a unit and period, then tell Kimsy what changed or attach the material you already have." /> : <div className="divide-y divide-[#e7ebe9]">{state.assessments.map((assessment) => {
+        const filled = assessment.rows.filter((row) => row.applicable && Object.values(row.values).some((value) => value !== null && value !== "")).length;
+        return <Link key={assessment.id} href={`/assessments/${assessment.id}`} className="flex flex-col gap-3 px-5 py-4 hover:bg-[#fafcfb] sm:flex-row sm:items-center"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[7px] bg-[#edf4f1] text-[#43635b]">{assessment.status === "APPROVED" || assessment.status === "COMPLETED" ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#24302c]">{unitName(assessment.unitId)}</p><p className="mt-1 text-xs text-[#77837e]">{assessment.period} · {filled}/{assessment.rows.length} scenarios assessed</p></div><div className="flex items-center gap-3">{statusBadge(assessment.status)}<ArrowRight className="h-4 w-4 text-[#81908a]" /></div></Link>;
+      })}</div>}
+      {state.assessments.length === 0 && <div className="flex justify-center border-t border-[#e2e7e5] p-4"><Link href="/assessments/new"><Button><Plus className="h-4 w-4" />Create assessment</Button></Link></div>}
+    </Panel>
+  </div>;
 }

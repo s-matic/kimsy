@@ -1,8 +1,15 @@
-import { DemoAiProvider } from "@/lib/ai/demo-provider";
-import { OpenAiProvider } from "@/lib/ai/openai-provider";
-import type { AiProvider } from "@/lib/ai/provider";
+import "server-only";
+import { OpenAiWorkspaceProvider } from "@/lib/ai/openai-provider";
 
-export function getAiProvider(): AiProvider {
+export class AiNotConfiguredError extends Error {
+  constructor() {
+    super("Add OPENAI_API_KEY to .env.local and restart Kimsy to use AI setup and assessment.");
+    this.name = "AiNotConfiguredError";
+  }
+}
+
+export function getWorkspaceAiProvider() {
   const apiKey = process.env.OPENAI_API_KEY;
-  return apiKey ? new OpenAiProvider(apiKey) : new DemoAiProvider();
+  if (!apiKey) throw new AiNotConfiguredError();
+  return new OpenAiWorkspaceProvider(apiKey);
 }

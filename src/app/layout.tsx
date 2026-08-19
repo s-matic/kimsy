@@ -4,8 +4,8 @@ import { StoreProvider } from "@/lib/store";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Kimsy | Compliance risk intelligence",
-  description: "AI-native compliance risk assessment and review.",
+  title: "Kimsy | AI risk assessment workspace",
+  description: "Turn your existing risk methodology into a focused, AI-assisted assessment workspace.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

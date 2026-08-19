@@ -1,18 +1,27 @@
-import type { AssessmentDraft, AssessmentRequest } from "@/lib/ai/schema";
+import type { ResponseInputContent } from "openai/resources/responses/responses";
+import type { Assessment, WorkspaceConfiguration } from "@/lib/types";
+import type { AssessmentAiOutput, OnboardingAiOutput } from "@/lib/ai/schema";
 
-export interface AiRunMetadata {
-  provider: string;
-  model: string;
-  promptVersion: string;
-  generatedAt: string;
-  fallback: boolean;
+export interface AiSourceInput {
+  text: string;
+  images: ResponseInputContent[];
 }
 
-export interface AiProviderResult {
-  draft: AssessmentDraft;
-  metadata: AiRunMetadata;
+export interface ConfigureInput {
+  stage: "ORGANIZATION" | "WORKFLOW" | "SCENARIOS" | "DESIGN";
+  message: string;
+  configuration: WorkspaceConfiguration;
+  sources: AiSourceInput;
 }
 
-export interface AiProvider {
-  buildAssessment(input: AssessmentRequest): Promise<AiProviderResult>;
+export interface AssessInput {
+  message: string;
+  configuration: WorkspaceConfiguration;
+  assessment: Assessment;
+  sources: AiSourceInput;
+}
+
+export interface WorkspaceAiProvider {
+  configure(input: ConfigureInput): Promise<OnboardingAiOutput>;
+  assess(input: AssessInput): Promise<AssessmentAiOutput>;
 }

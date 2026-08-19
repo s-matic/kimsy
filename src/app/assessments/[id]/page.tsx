@@ -2,252 +2,152 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  AlertTriangle,
+  AlertCircle,
   ArrowLeft,
   Bot,
   Check,
   CheckCircle2,
   ChevronRight,
-  Download,
-  ExternalLink,
-  FileCheck2,
   FileText,
-  History,
-  Link2,
-  LockKeyhole,
+  FileUp,
+  KeyRound,
   MessageSquareText,
   Paperclip,
-  ShieldCheck,
+  RotateCcw,
+  Send,
   Sparkles,
   UserRound,
+  X,
 } from "lucide-react";
-import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader, Progress } from "@/components/ui";
-import { ratingTone } from "@/lib/risk";
+import { displayFieldValue, FieldControl, RatingValue } from "@/components/field-control";
+import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader } from "@/components/ui";
+import { explainCalculation } from "@/lib/scoring";
 import { useKimsy } from "@/lib/store";
-import type { RiskRating } from "@/lib/types";
+import { readJsonResponse } from "@/lib/http";
+import type { Assessment, AssessmentStatus, RegisterChangeProposal, SourceDocument } from "@/lib/types";
 
-type Tab = "summary" | "facts" | "assessment" | "evidence" | "history";
-
-const ratings: RiskRating[] = ["Low", "Moderate", "High", "Severe"];
-
-function workflowSteps(status: string, model: string) {
-  const current = status === "FACT_GATHERING" ? 1 : status === "AI_DRAFT_READY" ? 2 : status === "IN_REVIEW" ? 3 : 4;
-  return [
-    model === "FIRST_LINE_LED" ? "Business facts" : "Fact gathering",
-    "AI analysis",
-    model === "FIRST_LINE_LED" ? "Compliance review" : "Officer checks",
-    "Finalized",
-  ].map((label, index) => ({ label, complete: current > index + 1, active: current === index + 1 }));
+function statusBadge(status: AssessmentStatus) {
+  if (status === "APPROVED" || status === "COMPLETED") return <Badge tone="success">{status === "APPROVED" ? "Approved" : "Complete"}</Badge>;
+  if (status === "READY_FOR_REVIEW") return <Badge tone="warning">Ready for review</Badge>;
+  if (status === "RETURNED") return <Badge tone="danger">Returned</Badge>;
+  return <Badge>Draft</Badge>;
 }
 
-export default function AssessmentDetailPage() {
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function isPresent(value: unknown) {
+  return value !== null && value !== undefined && value !== "" && (!Array.isArray(value) || value.length > 0);
+}
+
+function assessmentReady(assessment: Assessment, requiredFieldIds: string[]) {
+  const applicable = assessment.rows.filter((row) => row.applicable);
+  return applicable.length > 0 && applicable.every((row) => requiredFieldIds.every((fieldId) => isPresent(row.values[fieldId])));
+}
+
+export default function AssessmentWorkspacePage() {
   const params = useParams<{ id: string }>();
   const {
     state,
-    updateAnswer,
-    applyAssessmentDraft,
-    acceptScenario,
-    resolveException,
-    acceptEvidence,
-    finalizeAssessment,
+    updateRowValue,
+    updateRowRationale,
+    setRowApplicability,
+    recordAiProposal,
+    applyProposal,
+    discardProposal,
+    completeAssessment,
+    submitForReview,
+    reviewAssessment,
   } = useKimsy();
-  const [tab, setTab] = useState<Tab>("summary");
-  const [generating, setGenerating] = useState(false);
-  const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
   const assessment = state.assessments.find((item) => item.id === params.id);
-  const framework = state.frameworkVersions.find((item) => item.version === assessment?.frameworkVersion) ?? state.frameworkVersions[0];
-  const openExceptions = assessment?.exceptions.filter((item) => item.status === "OPEN") ?? [];
-  const relevant = assessment?.scenarioAssessments.filter((item) => item.relevant) ?? [];
+  const [selectedRowId, setSelectedRowId] = useState(assessment?.rows[0]?.id ?? "");
+  const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [deselectedChanges, setDeselectedChanges] = useState<string[]>([]);
+  const [reviewComment, setReviewComment] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const selected = assessment?.scenarioAssessments.find((item) => item.id === selectedScenario) ?? relevant[0];
+  if (!assessment) return <Panel><EmptyState icon={<MessageSquareText className="h-5 w-5" />} title="Assessment not found" description="Return to assessments and choose an available workspace." /></Panel>;
 
-  if (!assessment) {
-    return <EmptyState icon={<FileText className="h-5 w-5" />} title="Assessment not found" description="This assessment may have been removed or you may not have access." />;
-  }
+  const unit = state.configuration.units.find((item) => item.id === assessment.unitId);
+  const selectedRow = assessment.rows.find((row) => row.id === selectedRowId) ?? assessment.rows[0];
+  const selectedScenario = state.configuration.scenarios.find((scenario) => scenario.id === selectedRow?.scenarioId);
+  const editable = state.persona === "ASSESSOR" && (assessment.status === "DRAFT" || assessment.status === "RETURNED");
+  const requiredFields = state.configuration.fields.filter((field) => field.required && field.type !== "CALCULATED").map((field) => field.id);
+  const ready = assessmentReady(assessment, requiredFields);
+  const selectedChanges = assessment.pendingProposal?.changes.map((change) => change.scenarioId).filter((id) => !deselectedChanges.includes(id)) ?? [];
 
-  const steps = workflowSteps(assessment.status, assessment.operatingModelSnapshot);
-  const canFinalize =
-    assessment.status === "IN_REVIEW" &&
-    assessment.scenarioAssessments.length > 0 &&
-    openExceptions.length === 0 &&
-    assessment.scenarioAssessments.every((scenario) => scenario.accepted);
-  const handleGenerate = async () => {
-    setGenerating(true);
+  const send = async () => {
+    if (!message.trim() && !files.length) return;
+    setLoading(true);
+    setError("");
     try {
-      const response = await fetch("/api/ai/assessment", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ assessmentId: assessment.id, questions: assessment.questions, scenarios: framework.scenarios }),
-      });
-      const result = await response.json();
-      if (!response.ok || !result.draft) {
-        throw new Error(result.error ?? "Unable to generate the assessment draft.");
-      }
-      applyAssessmentDraft(assessment.id, result.draft);
-      setTab("assessment");
+      const form = new FormData();
+      form.append("message", message);
+      form.append("configuration", JSON.stringify(state.configuration));
+      form.append("assessment", JSON.stringify(assessment));
+      files.forEach((file) => form.append("files", file));
+      const response = await fetch("/api/ai/workspace", { method: "POST", body: form });
+      const result = await readJsonResponse(response);
+      if (!response.ok) throw new Error(String(result.error ?? "Kimsy could not assess that material."));
+      const proposal: RegisterChangeProposal = {
+        id: `proposal-${assessment.id}-${assessment.messages.length}`,
+        summary: String(result.summary),
+        changes: result.changes as RegisterChangeProposal["changes"],
+        warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : [],
+        createdAt: "Just now",
+      };
+      recordAiProposal({ assessmentId: assessment.id, userText: message, assistantText: String(result.assistantMessage), proposal, sources: result.sources as SourceDocument[] });
+      setDeselectedChanges([]);
+      setMessage("");
+      setFiles([]);
+      if (fileRef.current) fileRef.current.value = "";
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Kimsy could not assess that material.");
     } finally {
-      setGenerating(false);
+      setLoading(false);
     }
   };
 
-  return (
-    <div className="space-y-5">
-      <Link href="/assessments" className="inline-flex items-center gap-2 text-xs font-semibold text-[#5c6964] hover:text-[#0f766e]"><ArrowLeft className="h-3.5 w-3.5" />Assessment register</Link>
-      <PageHeader
-        eyebrow={assessment.reference}
-        title={assessment.businessUnit}
-        description={`${assessment.period} · Framework v${assessment.frameworkVersion} · Last updated ${assessment.lastUpdated}`}
-        actions={
-          <>
-            <Badge tone="info">{assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "First-line-led" : "Compliance-led"}</Badge>
-            {assessment.status === "FINALIZED" ? (
-              <a href={`/api/reports/${assessment.id}`} className="inline-flex h-9 items-center gap-2 rounded-[5px] border border-[#cdd6d2] bg-white px-3.5 text-sm font-semibold text-[#24302c] hover:bg-[#f3f6f5]"><Download className="h-4 w-4" />PDF report</a>
-            ) : (
-              <Button onClick={() => finalizeAssessment(assessment.id)} disabled={!canFinalize}><LockKeyhole className="h-4 w-4" />Finalize</Button>
-            )}
-          </>
-        }
-      />
+  return <div className="space-y-5">
+    <Link href="/" className="inline-flex items-center gap-2 text-xs font-semibold text-[#5c6964] hover:text-[#0f766e]"><ArrowLeft className="h-3.5 w-3.5" />Assessments</Link>
+    <PageHeader eyebrow={assessment.period} title={unit?.name ?? "Assessment"} description={`${assessment.rows.filter((row) => row.applicable).length} applicable scenarios · Updated ${assessment.updatedAt}`} actions={<>{statusBadge(assessment.status)}{state.configuration.review.mode === "SOLO" && editable && <Button disabled={!ready} onClick={() => completeAssessment(assessment.id)}><CheckCircle2 className="h-4 w-4" />Mark complete</Button>}{state.configuration.review.mode === "REVIEWER" && state.persona === "ASSESSOR" && editable && <Button disabled={!ready} onClick={() => submitForReview(assessment.id)}><UserRound className="h-4 w-4" />Send to reviewer</Button>}</>} />
 
-      <Panel className="overflow-hidden">
-        <div className="grid grid-cols-2 divide-x divide-[#e2e7e5] sm:grid-cols-4">
-          {steps.map((step, index) => (
-            <div key={step.label} className={`flex min-h-16 items-center gap-3 px-3 py-3 sm:px-4 ${step.active ? "bg-[#eef7f5]" : "bg-white"}`}>
-              <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${step.complete ? "border-[#0f766e] bg-[#0f766e] text-white" : step.active ? "border-[#0f766e] text-[#0f766e]" : "border-[#cbd4d0] text-[#78857f]"}`}>
-                {step.complete ? <Check className="h-3.5 w-3.5" /> : index + 1}
-              </div>
-              <span className={`text-xs font-semibold ${step.active ? "text-[#0b665f]" : "text-[#52605b]"}`}>{step.label}</span>
-            </div>
-          ))}
+    {assessment.status === "RETURNED" && <div className="flex items-start gap-3 rounded-[7px] border border-[#efc0bb] bg-[#fff4f2] px-4 py-3"><RotateCcw className="mt-0.5 h-4 w-4 text-[#a43a30]" /><div><p className="text-xs font-semibold text-[#912d24]">Returned by {state.configuration.review.reviewerName}</p><p className="mt-1 text-xs leading-5 text-[#79524e]">{assessment.reviewComment}</p></div></div>}
+
+    {state.persona === "REVIEWER" && assessment.status === "READY_FOR_REVIEW" && <Panel className="border-[#e4cf9d] bg-[#fffdf7]"><div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-end"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Independent review</p><p className="mt-1 text-xs leading-5 text-[#6c746f]">Review the conversation, sources, and register below. Add a comment before approving or returning the assessment.</p><textarea aria-label="Review comment" value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} rows={2} className="mt-3 w-full resize-y rounded-[6px] border border-[#d8cba8] bg-white px-3 py-2 text-sm" placeholder="Document your review judgment…" /></div><div className="flex gap-2"><Button variant="secondary" disabled={!reviewComment.trim()} onClick={() => reviewAssessment(assessment.id, "RETURN", reviewComment.trim())}>Return</Button><Button disabled={!reviewComment.trim()} onClick={() => reviewAssessment(assessment.id, "APPROVE", reviewComment.trim())}><CheckCircle2 className="h-4 w-4" />Approve</Button></div></div></Panel>}
+
+    <div className="grid gap-5 xl:grid-cols-[410px_minmax(0,1fr)]">
+      <Panel className="flex h-fit min-h-0 flex-col overflow-hidden xl:sticky xl:top-20 xl:min-h-[680px] xl:max-h-[calc(100vh-6rem)]">
+        <PanelHeader title="Assessment conversation" description="Your notes and source material stay with this assessment" action={<Badge tone="info"><Sparkles className="mr-1 h-3 w-3" />AI assisted</Badge>} />
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {assessment.messages.map((item) => <div key={item.id} className={`flex gap-2.5 ${item.role === "USER" ? "flex-row-reverse" : ""}`}><div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${item.role === "USER" ? "bg-[#d6b56f] text-[#342b19]" : "bg-[#dff3ef] text-[#0f766e]"}`}>{item.role === "USER" ? <UserRound className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}</div><div className={`max-w-[82%] rounded-[8px] px-3 py-2.5 ${item.role === "USER" ? "bg-[#23322d] text-white" : "bg-[#edf4f1] text-[#364b44]"}`}><p className="text-xs leading-5">{item.text}</p>{item.sourceNames?.length ? <div className="mt-2 flex flex-wrap gap-1">{item.sourceNames.map((name) => <span key={name} className="rounded bg-white/10 px-1.5 py-0.5 text-[9px]">{name}</span>)}</div> : null}<p className={`mt-1.5 text-[9px] ${item.role === "USER" ? "text-white/55" : "text-[#82908a]"}`}>{item.createdAt}</p></div></div>)}
         </div>
+        {assessment.sources.length > 0 && <div className="border-t border-[#e2e7e5] bg-[#fbfcfc] px-4 py-3"><div className="flex items-center gap-2 text-[10px] font-bold uppercase text-[#75817c]"><Paperclip className="h-3 w-3" />Sources used</div><div className="mt-2 flex flex-wrap gap-1.5">{assessment.sources.map((source) => <span key={source.id} title={`${source.locators.length} source locators`} className="inline-flex items-center gap-1 rounded-[4px] border border-[#dce2df] bg-white px-2 py-1 text-[10px] text-[#5e6c66]"><FileText className="h-3 w-3" />{source.name} · {formatBytes(source.size)}</span>)}</div></div>}
+        {editable ? <div className="border-t border-[#e2e7e5] p-4"><textarea aria-label="Message Kimsy" rows={3} value={message} onChange={(event) => setMessage(event.target.value)} className="w-full resize-none rounded-[7px] border border-[#cfd8d4] px-3 py-2.5 text-sm leading-6 placeholder:text-[#929d98] focus:border-[#0f766e] focus:outline-none" placeholder="Tell Kimsy what changed, or ask it to review a file…" />{files.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{files.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex items-center gap-1 rounded bg-[#edf2f0] px-2 py-1 text-[10px]">{file.name}<button aria-label={`Remove ${file.name}`} onClick={() => setFiles(files.filter((_, fileIndex) => fileIndex !== index))}><X className="h-3 w-3" /></button></span>)}</div>}{error && <div className="mt-2 flex items-start gap-2 rounded-[6px] border border-[#efc0bb] bg-[#fff4f2] px-3 py-2 text-xs leading-5 text-[#96352b]">{error.includes("OPENAI_API_KEY") && <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />}{error}</div>}<div className="mt-3 flex items-center justify-between"><input ref={fileRef} type="file" multiple accept=".pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} /><Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}><FileUp className="h-3.5 w-3.5" />Attach</Button><Button size="sm" loading={loading} disabled={!message.trim() && !files.length} onClick={send}>{loading ? "Thinking" : "Send"}{!loading && <Send className="h-3.5 w-3.5" />}</Button></div></div> : <div className="border-t border-[#e2e7e5] bg-[#f8faf9] px-4 py-3 text-xs leading-5 text-[#6d7a75]">{state.persona === "REVIEWER" ? "Reviewer mode is read-only." : "This assessment is read-only in its current state."}</div>}
       </Panel>
 
-      <div className="overflow-x-auto border-b border-[#dce2df]">
-        <div className="flex min-w-max gap-6">
-          {([
-            ["summary", "Summary"],
-            ["facts", assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "Business facts" : "Fact gathering"],
-            ["assessment", "Risk assessment"],
-            ["evidence", `Evidence (${assessment.evidence.length})`],
-            ["history", "Audit history"],
-          ] as [Tab, string][]).map(([value, label]) => (
-            <button key={value} onClick={() => setTab(value)} className={`border-b-2 px-0.5 pb-3 text-xs font-semibold ${tab === value ? "border-[#0f766e] text-[#0f766e]" : "border-transparent text-[#697671] hover:text-[#27332f]"}`}>{label}</button>
-          ))}
-        </div>
+      <div className="min-w-0 space-y-5">
+        {assessment.pendingProposal && editable && <Panel className="overflow-hidden border-[#9bcac1]"><div className="border-b border-[#cde0db] bg-[#edf8f5] px-5 py-4"><div className="flex items-start gap-3"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-[#0f766e] text-white"><Sparkles className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#204a42]">Proposed register changes</p><p className="mt-1 text-xs leading-5 text-[#55736b]">{assessment.pendingProposal.summary}</p></div><Badge tone="info">Review first</Badge></div></div><div className="divide-y divide-[#e2e7e5]">{assessment.pendingProposal.changes.map((change) => {
+          const scenario = state.configuration.scenarios.find((item) => item.id === change.scenarioId);
+          const selected = selectedChanges.includes(change.scenarioId);
+          return <label key={change.scenarioId} className="flex cursor-pointer items-start gap-3 px-5 py-4 hover:bg-[#fbfcfc]"><input type="checkbox" checked={selected} onChange={(event) => setDeselectedChanges(event.target.checked ? deselectedChanges.filter((id) => id !== change.scenarioId) : [...deselectedChanges, change.scenarioId])} className="mt-1 h-4 w-4 accent-[#0f766e]" /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-semibold">{scenario?.code} · {scenario?.title}</p><Badge tone={change.applicable ? "success" : "neutral"}>{change.applicable ? "Applicable" : "Not applicable"}</Badge></div><p className="mt-1.5 text-xs leading-5 text-[#65736d]">{change.rationale}</p><div className="mt-2 flex flex-wrap gap-1.5">{change.values.map((item) => { const field = state.configuration.fields.find((candidate) => candidate.id === item.fieldId); return field ? <span key={item.fieldId} className="rounded-[4px] border border-[#dce2df] bg-[#f8faf9] px-2 py-1 text-[10px]"><strong>{field.label}:</strong> {displayFieldValue(field, item.value)}</span> : null; })}</div></div></label>;
+        })}</div>{assessment.pendingProposal.warnings.length > 0 && <div className="border-t border-[#ead5a5] bg-[#fffaf0] px-5 py-3">{assessment.pendingProposal.warnings.map((warning) => <p key={warning} className="flex items-start gap-2 text-xs leading-5 text-[#735d32]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{warning}</p>)}</div>}<div className="flex justify-end gap-2 border-t border-[#dce2df] bg-[#fbfcfc] px-5 py-3"><Button variant="ghost" onClick={() => { discardProposal(assessment.id); setDeselectedChanges([]); }}>Discard</Button><Button disabled={!selectedChanges.length} onClick={() => { applyProposal(assessment.id, selectedChanges); setDeselectedChanges([]); }}>Apply {selectedChanges.length} change{selectedChanges.length === 1 ? "" : "s"}<Check className="h-4 w-4" /></Button></div></Panel>}
+
+        <Panel className="overflow-hidden"><PanelHeader title="Assessment register" description="Edit the source values; calculated ratings update immediately" action={<Link href="/register" className="text-xs font-semibold text-[#0f766e] hover:underline">Open spreadsheet view</Link>} /><div className="grid min-h-[560px] lg:grid-cols-[270px_minmax(0,1fr)]"><div className="border-b border-[#e2e7e5] lg:border-b-0 lg:border-r"><div className="divide-y divide-[#e7ebe9]">{assessment.rows.map((row) => {
+          const scenario = state.configuration.scenarios.find((item) => item.id === row.scenarioId);
+          const finalField = state.configuration.fields.find((field) => field.id === state.configuration.finalRatingFieldId);
+          return <button key={row.id} onClick={() => setSelectedRowId(row.id)} className={`flex w-full items-start gap-3 px-4 py-4 text-left ${selectedRow?.id === row.id ? "bg-[#edf7f5]" : "hover:bg-[#fafcfb]"}`}><div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${row.applicable ? "bg-[#0f766e] text-white" : "border border-[#c9d2ce] text-[#9aa49f]"}`}>{row.applicable ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}</div><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-[#0f766e]">{scenario?.code}</p><p className="mt-0.5 text-xs font-semibold leading-5 text-[#293630]">{scenario?.title}</p>{finalField && row.applicable && <div className="mt-2"><RatingValue field={finalField} value={row.values[finalField.id] ?? null} /></div>}</div><ChevronRight className="mt-1 h-3.5 w-3.5 text-[#83908a]" /></button>;
+        })}</div></div>{selectedRow && selectedScenario && <div className="min-w-0"><div className="border-b border-[#e2e7e5] px-5 py-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-[#0f766e]">{selectedScenario.code} · {selectedScenario.category}</p><h2 className="mt-1 text-lg font-semibold">{selectedScenario.title}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-[#6d7a75]">{selectedScenario.description}</p></div>{editable ? <label className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={selectedRow.applicable} onChange={(event) => setRowApplicability(assessment.id, selectedRow.id, event.target.checked)} className="h-4 w-4 accent-[#0f766e]" />Applicable</label> : <Badge>{selectedRow.applicable ? "Applicable" : "Not applicable"}</Badge>}</div></div>{selectedRow.applicable ? <div className="space-y-5 p-5"><div className="grid gap-4 sm:grid-cols-2">{state.configuration.fields.map((field) => <div key={field.id} className={field.type === "LONG_TEXT" ? "sm:col-span-2" : ""}><div className="mb-1.5 flex items-center justify-between gap-2"><label className="text-xs font-semibold text-[#3d4a45]">{field.label}{field.required && <span className="ml-1 text-[#a42c21]">*</span>}</label>{field.type === "CALCULATED" && <span title={explainCalculation(field.id, selectedRow.values, state.configuration)} className="text-[9px] font-bold uppercase text-[#0f766e]">Calculated</span>}</div><p className="mb-2 text-[10px] leading-4 text-[#7c8883]">{field.helpText}</p>{editable ? <FieldControl field={field} value={selectedRow.values[field.id] ?? null} onChange={(value) => updateRowValue(assessment.id, selectedRow.id, field.id, value)} /> : field.type === "CALCULATED" ? <RatingValue field={field} value={selectedRow.values[field.id] ?? null} /> : <p className="rounded-[5px] bg-[#f5f7f6] px-3 py-2 text-sm">{displayFieldValue(field, selectedRow.values[field.id] ?? null)}</p>}{field.type === "CALCULATED" && <p className="mt-1.5 text-[10px] text-[#71807a]">{explainCalculation(field.id, selectedRow.values, state.configuration)}</p>}</div>)}</div><div className="border-t border-[#e2e7e5] pt-5"><label className="text-xs font-semibold text-[#3d4a45]">Assessment rationale</label>{editable ? <textarea aria-label="Assessment rationale" rows={4} value={selectedRow.rationale} onChange={(event) => updateRowRationale(assessment.id, selectedRow.id, event.target.value)} className="mt-2 w-full resize-y rounded-[6px] border border-[#cfd8d4] px-3 py-2.5 text-sm leading-6" placeholder="Document the key facts and judgment…" /> : <p className="mt-2 text-sm leading-6 text-[#4a5852]">{selectedRow.rationale || "No rationale recorded."}</p>}{selectedRow.citations.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{selectedRow.citations.map((citation, index) => <span key={`${citation.sourceName}-${index}`} className="inline-flex items-center gap-1 rounded-[4px] border border-[#dce2df] bg-[#f8faf9] px-2 py-1 text-[10px] text-[#5e6c66]"><FileText className="h-3 w-3" />{citation.sourceName} · {citation.locator}</span>)}</div>}</div></div> : <div className="p-5"><EmptyState icon={<CheckCircle2 className="h-5 w-5" />} title="Scenario marked not applicable" description="Turn applicability back on if this scenario should be assessed for the selected unit and period." /></div>}</div>}</div></Panel>
+        {!ready && editable && <p className="flex items-center gap-2 rounded-[6px] border border-[#ead5a5] bg-[#fffaf0] px-4 py-3 text-xs text-[#785819]"><AlertCircle className="h-4 w-4 shrink-0" />Complete the required fields for every applicable scenario before finishing the assessment.</p>}
       </div>
-
-      {tab === "summary" && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,.75fr)]">
-          <div className="space-y-5">
-            <Panel>
-              <PanelHeader title="Assessment position" description="Current exposure and review progress" />
-              <div className="grid sm:grid-cols-3">
-                <div className="border-b border-[#e2e7e5] px-5 py-5 sm:border-b-0 sm:border-r"><p className="text-xs text-[#6d7a75]">Relevant scenarios</p><p className="mt-2 text-2xl font-semibold">{relevant.length || "—"}</p><p className="mt-1 text-[11px] text-[#83908a]">of {framework.scenarios.length} evaluated</p></div>
-                <div className="border-b border-[#e2e7e5] px-5 py-5 sm:border-b-0 sm:border-r"><p className="text-xs text-[#6d7a75]">Outside appetite</p><p className="mt-2 text-2xl font-semibold text-[#a42c21]">{relevant.filter((item) => !item.withinAppetite).length}</p><p className="mt-1 text-[11px] text-[#83908a]">requires documented action</p></div>
-                <div className="px-5 py-5"><p className="text-xs text-[#6d7a75]">Human accepted</p><p className="mt-2 text-2xl font-semibold">{relevant.filter((item) => item.accepted).length}/{relevant.length || 0}</p><p className="mt-1 text-[11px] text-[#83908a]">AI cannot approve proposals</p></div>
-              </div>
-            </Panel>
-            <Panel>
-              <PanelHeader title="What changed and why it matters" description="Management translation based on current facts and framework" action={<Badge tone="info"><Sparkles className="mr-1 h-3 w-3" />AI draft</Badge>} />
-              <div className="space-y-4 px-5 py-5 text-sm leading-6 text-[#41504a]">
-                {relevant.length ? (
-                  <>
-                    <p>{assessment.businessUnit}&apos;s compliance exposure has increased, primarily because customer ownership structures are becoming more complex while CDD quality and review timeliness have deteriorated.</p>
-                    <div className="border-l-2 border-[#c74035] bg-[#fff6f5] px-4 py-3"><p className="font-semibold text-[#84251d]">Action is required</p><p className="mt-1 text-xs leading-5 text-[#76544f]">A relevant scenario is proposed outside appetite. Management should confirm remediation capacity, ownership, and delivery dates before final approval.</p></div>
-                  </>
-                ) : (
-                  <p>No exposure conclusion is available yet. Complete fact gathering and generate the framework-based assessment before management reporting.</p>
-                )}
-                <p className="text-xs text-[#77837e]">This explanation remains a draft until accepted by a compliance officer.</p>
-              </div>
-            </Panel>
-          </div>
-          <div className="space-y-5">
-            <Panel>
-              <PanelHeader title="Assessment owner" />
-              <div className="flex items-center gap-3 px-5 py-4"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#d9e8e4] text-xs font-bold text-[#225d55]">{assessment.owner.split(" ").map((part) => part[0]).join("").slice(0,2)}</div><div><p className="text-sm font-semibold">{assessment.owner}</p><p className="text-xs text-[#74817c]">{assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "Business contributor" : "Compliance officer"}</p></div></div>
-              <div className="border-t border-[#e2e7e5] px-5 py-4 text-xs text-[#596761]"><div className="flex justify-between"><span>Due date</span><span className="font-semibold text-[#27332f]">{assessment.dueDate}</span></div><div className="mt-3 flex justify-between"><span>Completion</span><Progress value={assessment.completion} /></div></div>
-            </Panel>
-            <Panel>
-              <PanelHeader title={assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "Compliance review" : "Officer checks"} />
-              <div className="px-5 py-4"><div className="flex items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-[4px] bg-[#fff0ee] text-[#a42c21]"><AlertTriangle className="h-4 w-4" /></div><div><p className="text-sm font-semibold">{openExceptions.length} open exceptions</p><p className="mt-1 text-xs leading-5 text-[#6a7772]">{openExceptions.length ? "Blocking items must be resolved before finalization." : "All required checks are complete."}</p></div></div><Button variant="secondary" className="mt-4 w-full" onClick={() => setTab("assessment")}>Open review workspace<ChevronRight className="h-4 w-4" /></Button></div>
-            </Panel>
-          </div>
-        </div>
-      )}
-
-      {tab === "facts" && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <Panel>
-            <PanelHeader title={assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "Business facts" : "Compliance fact gathering"} description={assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "Questions translated from the published risk framework into business language." : "Capture the business facts directly or request targeted input from a business contact."} />
-            <div className="divide-y divide-[#e2e7e5]">
-              {assessment.questions.map((question, index) => (
-                <div key={question.id} className="px-5 py-5">
-                  <div className="flex items-start gap-3"><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#edf2f0] text-[10px] font-bold text-[#53615c]">{index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><label htmlFor={question.id} className="text-sm font-semibold text-[#25312d]">{question.prompt}</label>{question.required && <span className="text-[10px] font-bold uppercase text-[#a42c21]">Required</span>}</div><p className="mt-1 text-xs leading-5 text-[#74817c]">{question.help}</p><textarea id={question.id} value={question.answer} onChange={(event) => updateAnswer(assessment.id, question.id, event.target.value)} rows={3} className="mt-3 w-full resize-y rounded-[5px] border border-[#cfd7d3] bg-white px-3 py-2.5 text-sm leading-6 text-[#28352f] placeholder:text-[#919b97] focus:border-[#0f766e] focus:outline-none" placeholder="Enter the facts known today..." /></div></div>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col gap-3 border-t border-[#dce2df] bg-[#f8faf9] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-[#6b7873]">Answers save automatically and remain editable until finalization.</p><Button loading={generating} onClick={handleGenerate} disabled={assessment.completion < 100}><Sparkles className="h-4 w-4" />Build AI assessment</Button></div>
-          </Panel>
-          <div className="space-y-5">
-            <Panel><PanelHeader title="Completion" /><div className="px-5 py-5"><p className="text-3xl font-semibold">{assessment.completion}%</p><Progress value={assessment.completion} /><p className="mt-3 text-xs leading-5 text-[#71807a]">Complete all required questions before generating a new assessment draft.</p></div></Panel>
-            {assessment.operatingModelSnapshot === "COMPLIANCE_LED" && <Panel><PanelHeader title="Request business input" /><div className="px-5 py-4"><p className="text-xs leading-5 text-[#697671]">Send selected questions to a business contact without transferring assessment ownership.</p><Button variant="secondary" className="mt-3 w-full"><MessageSquareText className="h-4 w-4" />Create information request</Button></div></Panel>}
-          </div>
-        </div>
-      )}
-
-      {tab === "assessment" && (
-        assessment.scenarioAssessments.length === 0 ? (
-          <Panel><EmptyState icon={<Bot className="h-5 w-5" />} title="No assessment draft yet" description="Complete the fact-gathering questions and run the analysis to map facts against the published risk scenarios." /></Panel>
-        ) : (
-          <div className="grid gap-5 xl:grid-cols-[330px_minmax(0,1fr)]">
-            <Panel className="h-fit overflow-hidden">
-              <PanelHeader title="Relevant scenarios" description={`${relevant.length} relevant · ${openExceptions.length} exceptions`} />
-              <div className="divide-y divide-[#e7ebe9]">
-                {relevant.map((scenario) => {
-                  const risk = framework.scenarios.find((item) => item.id === scenario.scenarioId);
-                  const exceptions = assessment.exceptions.filter((item) => item.scenarioAssessmentId === scenario.id && item.status === "OPEN").length;
-                  return <button key={scenario.id} onClick={() => setSelectedScenario(scenario.id)} className={`flex w-full items-start gap-3 px-4 py-4 text-left ${selected?.id === scenario.id ? "bg-[#edf7f5]" : "hover:bg-[#f8faf9]"}`}><div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${scenario.accepted ? "bg-[#187653] text-white" : "border border-[#bdc8c3] text-transparent"}`}>{scenario.accepted && <Check className="h-3 w-3" />}</div><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-[#77847f]">{risk?.code}</p><p className="mt-0.5 text-xs font-semibold leading-5 text-[#293630]">{risk?.title}</p><div className="mt-2 flex items-center gap-2"><Badge tone={ratingTone(scenario.proposedRating)}>{scenario.proposedRating}</Badge>{exceptions > 0 && <span className="text-[10px] font-bold text-[#a42c21]">{exceptions} exception{exceptions > 1 ? "s" : ""}</span>}</div></div></button>;
-                })}
-              </div>
-            </Panel>
-            {selected && (() => {
-              const risk = framework.scenarios.find((item) => item.id === selected.scenarioId)!;
-              const exceptions = assessment.exceptions.filter((item) => item.scenarioAssessmentId === selected.id);
-              return <div className="space-y-5">
-                <Panel>
-                  <div className="border-b border-[#e2e7e5] px-5 py-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-[#0f766e]">{risk.code} · {risk.category}</p><h2 className="mt-1 text-lg font-semibold">{risk.title}</h2></div><div className="flex items-center gap-2"><Badge tone={selected.confidence < 70 ? "warning" : "info"}>{selected.confidence}% confidence</Badge><Badge tone={selected.withinAppetite ? "success" : "danger"}>{selected.withinAppetite ? "Within appetite" : "Outside appetite"}</Badge></div></div></div>
-                  <div className="grid border-b border-[#e2e7e5] sm:grid-cols-3"><div className="border-b px-5 py-4 sm:border-b-0 sm:border-r"><p className="text-[10px] font-bold uppercase text-[#75817c]">AI proposal</p><div className="mt-2"><Badge tone={ratingTone(selected.proposedRating)}>{selected.proposedRating}</Badge></div></div><div className="border-b px-5 py-4 sm:border-b-0 sm:border-r"><p className="text-[10px] font-bold uppercase text-[#75817c]">Control effectiveness</p><p className="mt-2 text-sm font-semibold">{selected.controlEffectiveness}</p></div><div className="px-5 py-4"><p className="text-[10px] font-bold uppercase text-[#75817c]">Risk appetite</p><div className="mt-2"><Badge tone={ratingTone(risk.appetite)}>{risk.appetite}</Badge></div></div></div>
-                  <div className="px-5 py-5"><div className="mb-3 flex items-center gap-2"><Bot className="h-4 w-4 text-[#0f766e]" /><h3 className="text-xs font-bold uppercase text-[#586660]">Proposed rationale</h3></div><p className="text-sm leading-6 text-[#384741]">{selected.rationale}</p><div className="mt-4 flex flex-wrap gap-2">{selected.citations.map((citation) => <button key={citation} className="inline-flex items-center gap-1 rounded-[4px] border border-[#d5ddda] bg-[#f8faf9] px-2 py-1 text-[10px] font-semibold text-[#53615c] hover:border-[#8bbab4]"><FileText className="h-3 w-3" />{citation}<ExternalLink className="h-3 w-3" /></button>)}</div></div>
-                  <div className="border-t border-[#e2e7e5] bg-[#f8faf9] px-5 py-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-[#697671]">Accept the proposal or select a different rating with documented rationale.</p><div className="flex items-center gap-2"><select defaultValue={selected.acceptedRating ?? selected.proposedRating} aria-label="Accepted rating" className="h-9 rounded-[5px] border border-[#cdd6d2] bg-white px-2 text-xs font-semibold">{ratings.map((rating) => <option key={rating}>{rating}</option>)}</select><Button onClick={() => acceptScenario(assessment.id, selected.id)} disabled={selected.accepted}><ShieldCheck className="h-4 w-4" />{selected.accepted ? "Accepted" : "Accept rating"}</Button></div></div></div>
-                </Panel>
-                <Panel>
-                  <PanelHeader title={assessment.operatingModelSnapshot === "FIRST_LINE_LED" ? "Review exceptions" : "Officer checks"} description="Only items requiring judgment or action are shown." />
-                  {exceptions.length === 0 ? <EmptyState icon={<CheckCircle2 className="h-5 w-5" />} title="No exceptions" description="No specific review issues were identified for this scenario." /> : <div className="divide-y divide-[#e7ebe9]">{exceptions.map((exception) => <div key={exception.id} className="px-5 py-4"><div className="flex items-start gap-3"><div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] ${exception.status === "RESOLVED" ? "bg-[#eaf7f1] text-[#176b4b]" : "bg-[#fff0ee] text-[#a42c21]"}`}>{exception.status === "RESOLVED" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{exception.title}</p><Badge tone={exception.status === "RESOLVED" ? "success" : exception.severity === "Critical" ? "critical" : "danger"}>{exception.status === "RESOLVED" ? "Resolved" : exception.severity}</Badge></div><p className="mt-1 text-xs leading-5 text-[#687670]">{exception.detail}</p>{exception.resolution && <p className="mt-2 rounded-[4px] bg-[#eef7f3] px-3 py-2 text-xs text-[#386553]">{exception.resolution}</p>}{exception.status === "OPEN" && <Button size="sm" variant="secondary" className="mt-3" onClick={() => resolveException(assessment.id, exception.id, "Reviewed against current evidence and accepted with remediation tracked by Compliance.")}>Resolve exception</Button>}</div></div></div>)}</div>}
-                </Panel>
-              </div>;
-            })()}
-          </div>
-        )
-      )}
-
-      {tab === "evidence" && (
-        <Panel className="overflow-hidden">
-          <PanelHeader title="Evidence register" description="Files, links, and attestations supporting the assessment" action={<Button><Paperclip className="h-4 w-4" />Add evidence</Button>} />
-          {assessment.evidence.length === 0 ? <EmptyState icon={<FileCheck2 className="h-5 w-5" />} title="No evidence added" description="Attach files, link to an approved repository, or capture a named attestation." /> : <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left"><thead><tr className="border-b border-[#e2e7e5] bg-[#f8faf9] text-[10px] font-bold uppercase text-[#71807a]"><th className="px-5 py-3">Evidence</th><th className="px-4 py-3">Scenario</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Added</th><th className="px-5 py-3 text-right">Review</th></tr></thead><tbody>{assessment.evidence.map((evidence) => { const risk = framework.scenarios.find((item) => item.id === evidence.scenarioId); return <tr key={evidence.id} className="border-b border-[#e7ebe9] last:border-b-0"><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-[4px] bg-[#edf2f0] text-[#53635d]">{evidence.type === "LINK" ? <Link2 className="h-4 w-4" /> : evidence.type === "ATTESTATION" ? <UserRound className="h-4 w-4" /> : <FileText className="h-4 w-4" />}</div><div><p className="text-sm font-semibold">{evidence.name}</p><p className="mt-0.5 text-[10px] font-bold text-[#7c8883]">{evidence.type}</p></div></div></td><td className="px-4 py-4 text-xs text-[#596761]">{risk?.code}</td><td className="px-4 py-4 text-xs text-[#596761]">{evidence.owner}</td><td className="px-4 py-4 text-xs text-[#596761]">{evidence.addedAt}</td><td className="px-5 py-4 text-right">{evidence.status === "PENDING" ? <Button size="sm" variant="secondary" onClick={() => acceptEvidence(assessment.id, evidence.id)}>Accept evidence</Button> : <Badge tone="success">Accepted</Badge>}</td></tr>;})}</tbody></table></div>}
-        </Panel>
-      )}
-
-      {tab === "history" && (
-        <Panel>
-          <PanelHeader title="Audit history" description="Append-only record of material actions and decisions" />
-          <div className="divide-y divide-[#e7ebe9]">{state.auditEvents.filter((event) => event.target.includes(assessment.reference) || event.target.includes(assessment.id) || event.target.startsWith("sa-") || event.target.startsWith("ex-")).map((event) => <div key={event.id} className="flex gap-4 px-5 py-4"><div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#edf2f0] text-[#586761]"><History className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><p className="text-sm font-semibold">{event.action}</p><span className="text-xs text-[#78847f]">by {event.actor}</span></div><p className="mt-1 text-xs leading-5 text-[#65736d]">{event.detail}</p><p className="mt-1 text-[10px] font-semibold text-[#89938f]">{event.at}</p></div></div>)}</div>
-        </Panel>
-      )}
-
-      {assessment.status !== "FINALIZED" && !canFinalize && <div className="flex items-center gap-2 rounded-[5px] border border-[#ead5a5] bg-[#fffaf0] px-4 py-3 text-xs text-[#785819]"><AlertTriangle className="h-4 w-4 shrink-0" />Finalization remains locked until all relevant scenarios are accepted and blocking exceptions are resolved.</div>}
     </div>
-  );
+  </div>;
 }
