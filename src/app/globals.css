@@ -1,22 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f6f5;
-  --foreground: #16201d;
+  --background: #f5f5f7;
+  --foreground: #23242d;
   --surface: #ffffff;
-  --border: #dce2df;
-  --muted: #65726d;
-  --nav: #18231f;
-  --nav-muted: #9eaaa5;
-  --accent: #0f766e;
-  --accent-hover: #0b625c;
-  --accent-soft: #e7f4f1;
+  --surface-muted: #fafafc;
+  --border: #e3e4e9;
+  --border-strong: #d6d8df;
+  --muted: #747786;
+  --nav: #fbfbfc;
+  --nav-muted: #777b8d;
+  --accent: #586ad0;
+  --accent-hover: #4657b5;
+  --accent-soft: #eff1fb;
+  --font-display: "Iowan Old Style", "Baskerville", "Times New Roman", serif;
+  --shadow-panel: 0 1px 2px rgba(31, 32, 40, 0.03), 0 10px 32px rgba(31, 32, 40, 0.055);
+  --shadow-float: 0 2px 5px rgba(31, 32, 40, 0.04), 0 18px 48px rgba(31, 32, 40, 0.09);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -32,7 +37,8 @@ body {
   min-width: 320px;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -50,7 +56,35 @@ a {
 }
 
 ::selection {
-  background: #b9ded8;
+  background: #d9def9;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+
+input,
+textarea,
+select {
+  color: var(--foreground);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #a0a3b0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .enter-soft {
+    animation: enter-soft 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes enter-soft {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes shimmer {
@@ -63,3 +97,15 @@ a {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
+
+/* Compatibility bridge while feature screens move onto the shared visual tokens. */
+[class~="text-[#0f766e]"] { color: var(--accent); }
+[class~="bg-[#0f766e]"] { background-color: var(--accent); }
+[class~="border-[#0f766e]"] { border-color: var(--accent); }
+[class~="accent-[#0f766e]"] { accent-color: var(--accent); }
+[class~="bg-[#edf7f5]"] { background-color: var(--accent-soft); }
+[class~="bg-[#e7f4f1]"] { background-color: #f0f1f8; }
+[class~="bg-[#dff3ef]"] { background-color: #e9ecfb; }
+[class~="text-[#69d3c5]"] { color: #aeb9f5; }
+[class~="bg-[#69d3c5]"] { background-color: #aeb9f5; }
+[class~="hover:bg-[#0b625c]"]:hover { background-color: var(--accent-hover); }

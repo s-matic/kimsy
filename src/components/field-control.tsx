@@ -29,7 +29,7 @@ export function FieldControl({
   onChange: (value: FieldValue) => void;
   compact?: boolean;
 }) {
-  const base = `${compact ? "h-9 text-xs" : "h-10 text-sm"} w-full rounded-[5px] border border-[#cfd8d4] bg-white px-2.5 text-[#27332f] focus:border-[#0f766e] focus:outline-none`;
+  const base = `${compact ? "h-9 text-xs" : "h-10 text-sm"} w-full rounded-[9px] border border-[#dedfe5] bg-white px-2.5 text-[#2f313b] shadow-sm focus:border-[#7785d8] focus:outline-none focus:ring-3 focus:ring-[#e9ebfa]`;
   if (field.type === "CALCULATED") return <div className="flex min-h-9 items-center"><RatingValue field={field} value={value} /></div>;
   if (field.type === "BOOLEAN") return <label className="inline-flex min-h-9 items-center gap-2 text-xs text-[#51605a]"><input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 accent-[#0f766e]" />{value ? "Yes" : "No"}</label>;
   if (field.type === "SINGLE_SELECT") return <select aria-label={field.label} className={base} value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value || null)}><option value="">Choose…</option>{field.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select>;

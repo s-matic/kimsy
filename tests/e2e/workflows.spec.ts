@@ -13,12 +13,15 @@ test("fresh workspace starts with AI-guided onboarding and can load the sample",
 test("sample workspace creates a unit-scoped assessment conversation", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.getByRole("link", { name: "New assessment" }).click();
+  await page.getByLabel("What would you like to assess?").fill("Focus on changes to outsourced payment operations.");
+  await page.getByRole("button", { name: "Start assessment" }).click();
+  await expect(page.getByText("Initial assessment brief")).toBeVisible();
   await page.getByLabel("Organizational unit").selectOption({ label: "Payments Operations" });
   await page.getByLabel("Assessment period").fill("2027 planning review");
   await page.getByRole("button", { name: "Start conversation" }).click();
   await expect(page.getByRole("heading", { name: "Payments Operations" })).toBeVisible();
-  await expect(page.getByText("Tell me what changed, paste your notes")).toBeVisible();
+  await expect(page.getByText("Focus on changes to outsourced payment operations.")).toBeVisible();
+  await expect(page.getByText("I’ve carried your initial brief")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer due diligence failure" })).toBeVisible();
 });
 

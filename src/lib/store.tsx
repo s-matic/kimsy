@@ -64,7 +64,7 @@ interface StoreValue {
   updateConfiguration: (configuration: WorkspaceConfiguration) => void;
   loadSample: () => void;
   resetWorkspace: () => void;
-  createAssessment: (unitId: string, period: string) => string;
+  createAssessment: (unitId: string, period: string, initialBrief?: string) => string;
   updateRowValue: (assessmentId: string, rowId: string, fieldId: string, value: FieldValue) => void;
   updateRowRationale: (assessmentId: string, rowId: string, rationale: string) => void;
   setRowApplicability: (assessmentId: string, rowId: string, applicable: boolean) => void;
@@ -130,7 +130,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadSample = useCallback(() => setState(clone(sampleState)), []);
   const resetWorkspace = useCallback(() => setState(clone(emptyState)), []);
 
-  const createAssessment = useCallback((unitId: string, period: string) => {
+  const createAssessment = useCallback((unitId: string, period: string, initialBrief?: string) => {
     const id = `assessment-${Date.now()}`;
     setState((current) => ({
       ...current,
@@ -142,10 +142,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           status: "DRAFT",
           rows: blankRows(current.configuration, id),
           messages: [
+            ...(initialBrief ? [{
+              id: `message-brief-${Date.now()}`,
+              role: "USER" as const,
+              text: initialBrief,
+              createdAt: `Today, ${timestamp()}`,
+            }] : []),
             {
               id: `message-${Date.now()}`,
               role: "ASSISTANT",
-              text: "Tell me what changed, paste your notes, or attach the material you want me to assess. I’ll propose register updates for you to review.",
+              text: initialBrief
+                ? "I’ve carried your initial brief into this assessment. Add any source material or context, and I’ll propose register updates for you to review."
+                : "Tell me what changed, paste your notes, or attach the material you want me to assess. I’ll propose register updates for you to review.",
               createdAt: `Today, ${timestamp()}`,
             },
           ],
