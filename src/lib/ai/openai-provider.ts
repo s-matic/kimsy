@@ -24,6 +24,7 @@ export class OpenAiWorkspaceProvider implements WorkspaceAiProvider {
       instructions: [
         "You configure a small, practical compliance risk assessment workspace for one primary risk or compliance professional.",
         `The current onboarding stage is ${input.stage}.`,
+        "This is one continuous setup conversation. Respond naturally and concisely, explain what you inferred, and invite the user to review the inline component or correct you.",
         "Return the complete configuration every time, preserving valid IDs and content outside the current stage unless the user explicitly asks to change it.",
         "Use stable lowercase kebab-case IDs. Parent IDs must reference units in the returned configuration.",
         "Risk scenarios must be faithful to the supplied customer material and retain specific source names and locators.",
@@ -36,6 +37,7 @@ export class OpenAiWorkspaceProvider implements WorkspaceAiProvider {
         role: "user",
         content: userContent([
           `User request: ${input.message || "Interpret the supplied material and propose this onboarding step."}`,
+          `Conversation so far:\n${input.conversation || "This is the first user message."}`,
           `Current configuration: ${JSON.stringify(input.configuration)}`,
           `Extracted source material:\n${input.sources.text || "No text source supplied."}`,
         ].join("\n\n"), input.sources.images),

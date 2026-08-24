@@ -1,27 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  ArrowLeft,
-  ArrowRight,
+  AlertCircle,
   Building2,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  FileUp,
   GitBranch,
   KeyRound,
   Network,
+  Paperclip,
   Plus,
   Rows3,
-  Send,
   Sparkles,
   TableProperties,
   Trash2,
   Users,
   X,
 } from "lucide-react";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
+import {
+  Message,
+  MessageContent,
+  MessageResponse,
+} from "@/components/ai-elements/message";
+import {
+  PromptInput,
+  PromptInputButton,
+  PromptInputFooter,
+  PromptInputHeader,
+  type PromptInputMessage,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+  usePromptInputAttachments,
+} from "@/components/ai-elements/prompt-input";
+import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Badge, Button, Panel } from "@/components/ui";
 import { validateConfiguration } from "@/lib/scoring";
 import { starterConfiguration } from "@/lib/seed";
@@ -31,12 +51,13 @@ import type { FieldDefinition, FieldType, OrganizationUnit, RiskScenario, Worksp
 
 export type Stage = "ORGANIZATION" | "WORKFLOW" | "SCENARIOS" | "DESIGN" | "REVIEW";
 
-const steps: Array<{ stage: Stage; label: string; title: string; prompt: string; icon: typeof Building2 }> = [
-  { stage: "ORGANIZATION", label: "Organization", title: "Describe how your organization works", prompt: "Paste an org description, upload an org chart, or just tell Kimsy about your teams and reporting lines.", icon: Building2 },
-  { stage: "WORKFLOW", label: "Ownership", title: "Choose who owns the assessment", prompt: "Start with one responsible person. Add an independent reviewer only if your process needs a maker-checker step.", icon: Users },
-  { stage: "SCENARIOS", label: "Scenarios", title: "Bring your own risk scenarios", prompt: "Drop in the spreadsheet, policy, document, or notes you use today. Kimsy will structure them without replacing your terminology.", icon: GitBranch },
-  { stage: "DESIGN", label: "Assessment design", title: "Recreate your assessment method", prompt: "Describe fields such as financial impact and control effectiveness. Kimsy will propose typed fields and transparent scoring matrices.", icon: TableProperties },
-  { stage: "REVIEW", label: "Review", title: "Review your workspace", prompt: "Confirm the structure before Kimsy creates your assessment workspace.", icon: CheckCircle2 },
+type ConfigurationStage = Exclude<Stage, "REVIEW">;
+
+const setupStages: Array<{ stage: ConfigurationStage; label: string; prompt: string; icon: typeof Building2 }> = [
+  { stage: "ORGANIZATION", label: "Organization", prompt: "Start by describing your organization, or upload an org chart, spreadsheet, or image.", icon: Building2 },
+  { stage: "WORKFLOW", label: "Ownership", prompt: "Who should own assessments, and do you need an independent reviewer?", icon: Users },
+  { stage: "SCENARIOS", label: "Risk scenarios", prompt: "Now share the risk scenarios, taxonomy, or policy material you use today.", icon: GitBranch },
+  { stage: "DESIGN", label: "Assessment method", prompt: "Finally, describe the fields and scoring method you want assessors to use.", icon: TableProperties },
 ];
 
 const fieldTypes: Array<{ value: FieldType; label: string }> = [
@@ -194,72 +215,189 @@ export function StructuredEditor({ stage, ...props }: EditorProps & { stage: Sta
   </div>;
 }
 
+interface SetupMessage {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+  artifactStage?: Stage;
+  sourceNames?: string[];
+  warnings?: string[];
+}
+
+const initialMessages: SetupMessage[] = [{
+  id: "setup-welcome",
+  role: "assistant",
+  text: "Let’s build this together in one conversation. Start by describing how your organization is structured, or attach the org chart, spreadsheet, image, or notes you already have.",
+}];
+
+const suggestions: Record<ConfigurationStage, string[]> = {
+  ORGANIZATION: ["We have a simple three-level organization", "I’ll upload our org chart", "Help me map our legal entities"],
+  WORKFLOW: ["I own the assessments myself", "Add an independent second-line reviewer", "Help me choose the workflow"],
+  SCENARIOS: ["I’ll upload our current risk library", "Draft scenarios from our business structure", "Keep our existing risk terminology"],
+  DESIGN: ["We use likelihood × impact", "Include control effectiveness", "Recreate our current risk matrix"],
+};
+
+function setupMessageId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function stageReady(stage: Stage, configuration: WorkspaceConfiguration) {
+  if (stage === "ORGANIZATION") return Boolean(configuration.organizationName.trim() && configuration.units.length);
+  if (stage === "WORKFLOW") return Boolean(configuration.review.assessorName.trim() && (configuration.review.mode === "SOLO" || configuration.review.reviewerName.trim()));
+  if (stage === "SCENARIOS") return configuration.scenarios.length > 0;
+  if (stage === "DESIGN") return configuration.fields.length > 0 && configuration.calculations.length > 0;
+  return validateConfiguration(configuration).length === 0;
+}
+
+function PromptAttachments({ loading, aiConfigured, message }: { loading: boolean; aiConfigured: boolean | null; message: string }) {
+  const attachments = usePromptInputAttachments();
+  return <>
+    {attachments.files.length > 0 && <PromptInputHeader className="gap-2 border-b border-[#ececf0] px-3 py-2.5">{attachments.files.map((file) => <span key={file.id} className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full bg-[#f0f1f5] px-2.5 py-1 text-[11px] font-medium text-[#656876]"><Paperclip className="h-3 w-3 shrink-0" /><span className="truncate">{file.filename || "Attached file"}</span><button type="button" aria-label={`Remove ${file.filename || "file"}`} onClick={() => attachments.remove(file.id)} className="rounded-full p-0.5 hover:bg-white"><X className="h-3 w-3" /></button></span>)}</PromptInputHeader>}
+    <PromptInputFooter className="px-3 pb-3">
+      <PromptInputTools><PromptInputButton tooltip="Attach source material" onClick={() => attachments.openFileDialog()} className="rounded-lg px-2.5 text-[#6d7080]"><Paperclip className="h-4 w-4" /><span>Attach</span></PromptInputButton></PromptInputTools>
+      <PromptInputSubmit status={loading ? "submitted" : "ready"} disabled={!aiConfigured || loading || (!message.trim() && attachments.files.length === 0)} className="h-9 w-9 rounded-[10px] bg-[#25262f] text-white hover:bg-[#3b3d49]" />
+    </PromptInputFooter>
+  </>;
+}
+
+function SetupArtifact({ stage, configuration, setConfiguration, confirmed, active, warnings, onConfirm, onComplete }: {
+  stage: Stage;
+  configuration: WorkspaceConfiguration;
+  setConfiguration: (configuration: WorkspaceConfiguration) => void;
+  confirmed: boolean;
+  active: boolean;
+  warnings: string[];
+  onConfirm: () => void;
+  onComplete: () => void;
+}) {
+  const definition = stage === "REVIEW" ? { label: "Workspace review", icon: CheckCircle2 } : setupStages.find((item) => item.stage === stage)!;
+  const Icon = definition.icon;
+  const ready = stageReady(stage, configuration);
+  return <Panel className="mt-3 w-full overflow-hidden border-[#dedfe5] shadow-[0_10px_36px_rgba(35,36,45,0.07)]">
+    <div className="flex items-center gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-3.5 sm:px-5"><div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#eff1fb] text-[#586ad0]"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#2c2e38]">{definition.label}</p><p className="mt-0.5 text-[11px] text-[#818491]">Generated from this conversation · edit anything inline</p></div>{confirmed ? <Badge tone="success"><Check className="mr-1 h-3 w-3" />Confirmed</Badge> : <Badge tone="info">Draft</Badge>}</div>
+    <div className="p-4 sm:p-5"><StructuredEditor stage={stage} configuration={configuration} setConfiguration={setConfiguration} /></div>
+    {stage !== "ORGANIZATION" && stage !== "SCENARIOS" && warnings.length > 0 && <div className="border-t border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-5">{warnings.slice(0, 5).map((warning) => <p key={warning} className="flex items-start gap-2 text-xs leading-5 text-[#735d32]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{warning}</p>)}</div>}
+    {stage === "REVIEW" ? <div className="flex flex-col gap-3 border-t border-[#ededf0] bg-[#fafafd] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"><p className="text-xs text-[#727584]">{ready ? "Everything is ready. You can still edit any component above." : "Resolve the checks in the review before creating the workspace."}</p><Button disabled={!ready} onClick={onComplete}>Create my workspace<CheckCircle2 className="h-4 w-4" /></Button></div> : active && !confirmed ? <div className="flex flex-col gap-3 border-t border-[#ededf0] bg-[#fafafd] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"><p className="text-xs text-[#727584]">{ready ? "Does this look right? You can keep editing after confirming." : "Add the required details before continuing."}</p><Button disabled={!ready} onClick={onConfirm}>Confirm {definition.label.toLowerCase()}<Check className="h-4 w-4" /></Button></div> : null}
+  </Panel>;
+}
+
 export function Onboarding() {
   const { completeOnboarding, loadSample } = useKimsy();
-  const [step, setStep] = useState(0);
   const [configuration, setConfiguration] = useState<WorkspaceConfiguration>(() => clone(starterConfiguration));
+  const [messages, setMessages] = useState<SetupMessage[]>(initialMessages);
+  const [activeStage, setActiveStage] = useState<Stage>("ORGANIZATION");
+  const [confirmedStages, setConfirmedStages] = useState<ConfigurationStage[]>([]);
   const [message, setMessage] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [assistantMessage, setAssistantMessage] = useState("I’ll turn what you already have into an editable structure. You stay in control of every field and scenario.");
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const active = steps[step];
-  const validation = validateConfiguration(configuration);
 
   useEffect(() => {
     fetch("/api/ai/status").then((response) => response.json()).then((result) => setAiConfigured(Boolean(result.configured))).catch(() => setAiConfigured(false));
   }, []);
 
-  const askKimsy = async () => {
-    if (active.stage === "REVIEW") return;
+  const latestArtifacts = new Map<Stage, string>();
+  messages.forEach((item) => { if (item.artifactStage) latestArtifacts.set(item.artifactStage, item.id); });
+  const activeDefinition = activeStage === "REVIEW" ? null : setupStages.find((item) => item.stage === activeStage)!;
+  const progressIndex = activeStage === "REVIEW" ? setupStages.length : setupStages.findIndex((item) => item.stage === activeStage);
+
+  const sendToKimsy = async (input: PromptInputMessage) => {
+    if (activeStage === "REVIEW" || (!input.text.trim() && input.files.length === 0)) return;
     setLoading(true);
     setError("");
+    const userMessage: SetupMessage = { id: setupMessageId("user"), role: "user", text: input.text.trim() || "Please review the attached source material.", sourceNames: input.files.map((file) => file.filename || "Attached file") };
+    setMessages((current) => [...current, userMessage]);
+    setMessage("");
     try {
+      const uploadedFiles = await Promise.all(input.files.map(async (file) => {
+        const response = await fetch(file.url);
+        if (!response.ok) throw new Error(`Could not read ${file.filename || "an attached file"}.`);
+        const blob = await response.blob();
+        return new File([blob], file.filename || "source-file", { type: file.mediaType || blob.type });
+      }));
       const form = new FormData();
-      form.append("stage", active.stage);
-      form.append("message", message);
+      form.append("stage", activeStage);
+      form.append("message", userMessage.text);
       form.append("configuration", JSON.stringify(configuration));
-      files.forEach((file) => form.append("files", file));
+      form.append("conversation", [...messages, userMessage].map((item) => `${item.role === "assistant" ? "Kimsy" : "User"}: ${item.text}`).join("\n"));
+      uploadedFiles.forEach((file) => form.append("files", file));
       const response = await fetch("/api/ai/configure", { method: "POST", body: form });
       const result = await readJsonResponse(response);
       if (!response.ok) throw new Error(String(result.error ?? "Kimsy could not interpret that material."));
+      const sources = Array.isArray(result.sources) ? result.sources as Array<{ name?: unknown }> : [];
+      const assistant: SetupMessage = {
+        id: setupMessageId("assistant"),
+        role: "assistant",
+        text: String(result.assistantMessage || "I’ve turned that into a structured proposal for you to review."),
+        artifactStage: activeStage,
+        sourceNames: sources.map((source) => String(source.name || "Source material")),
+        warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : [],
+      };
       setConfiguration(result.configuration as WorkspaceConfiguration);
-      setAssistantMessage(String(result.assistantMessage));
-      setWarnings(Array.isArray(result.warnings) ? result.warnings.map(String) : []);
-      setMessage("");
-      setFiles([]);
-      if (inputRef.current) inputRef.current.value = "";
+      setMessages((current) => [...current, assistant]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Kimsy could not interpret that material.");
+      throw caught;
     } finally {
       setLoading(false);
     }
   };
 
-  const canContinue = active.stage === "ORGANIZATION"
-    ? Boolean(configuration.organizationName.trim() && configuration.units.length)
-    : active.stage === "WORKFLOW"
-      ? Boolean(configuration.review.assessorName.trim() && (configuration.review.mode === "SOLO" || configuration.review.reviewerName.trim()))
-      : active.stage === "SCENARIOS"
-        ? configuration.scenarios.length > 0
-        : active.stage === "DESIGN"
-          ? configuration.fields.length > 0 && configuration.calculations.length > 0
-          : validation.length === 0;
+  const revealManualEditor = () => {
+    if (activeStage === "REVIEW" || latestArtifacts.has(activeStage)) return;
+    setMessages((current) => [...current, {
+      id: setupMessageId("manual"),
+      role: "assistant",
+      text: "Of course. Start with the editable structure below, and tell me whenever you want help refining it.",
+      artifactStage: activeStage,
+    }]);
+  };
 
-  return <div className="min-h-screen bg-[#f5f5f7]">
-    <header><div className="mx-auto flex h-[76px] max-w-[1400px] items-center px-4 sm:px-7"><Sparkles className="h-6 w-6 stroke-[1.5] text-[#25262f]" /><p className="font-display ml-2.5 text-[27px] leading-none text-[#20212a]">Kimsy</p><button onClick={loadSample} className="ml-auto rounded-full border border-[#dedfe5] bg-white px-4 py-2 text-xs font-semibold text-[#4e5261] shadow-sm hover:bg-[#f9f9fb]">Explore sample workspace</button></div></header>
-    <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-7 lg:py-9">
-      <div className="mb-7 flex items-center gap-2 overflow-x-auto pb-1">{steps.map((item, index) => <div key={item.stage} className="flex shrink-0 items-center gap-2"><div className={`flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-bold ${index < step ? "border-[#0f766e] bg-[#0f766e] text-white" : index === step ? "border-[#0f766e] bg-[#edf7f5] text-[#0f766e]" : "border-[#d1d9d5] bg-white text-[#87928d]"}`}>{index < step ? <Check className="h-3.5 w-3.5" /> : index + 1}</div><span className={`hidden text-xs font-semibold sm:block ${index === step ? "text-[#27332f]" : "text-[#87928d]"}`}>{item.label}</span>{index < steps.length - 1 && <div className="h-px w-5 bg-[#d8dfdc] lg:w-12" />}</div>)}</div>
-      <div className="mb-7 max-w-3xl"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#707485]">Set up your workspace</p><h1 className="font-display mt-2 text-[38px] leading-tight text-[#22232c] sm:text-[44px]">{active.title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#777a88]">{active.prompt}</p></div>
-      {!aiConfigured && aiConfigured !== null && active.stage !== "REVIEW" && <div className="mb-5 flex items-start gap-3 rounded-[7px] border border-[#ead5a5] bg-[#fffaf0] px-4 py-3"><KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-[#8a6417]" /><div><p className="text-xs font-semibold text-[#765514]">AI setup needs an API key</p><p className="mt-1 text-xs leading-5 text-[#7c6a45]">Add <code className="rounded bg-white px-1 py-0.5">OPENAI_API_KEY</code> to <code className="rounded bg-white px-1 py-0.5">.env.local</code> and restart the development server. You can still edit the structure manually or explore the sample.</p></div></div>}
-      <div className={`grid gap-5 ${active.stage === "REVIEW" ? "mx-auto max-w-4xl" : "xl:grid-cols-[minmax(340px,.8fr)_minmax(560px,1.2fr)]"}`}>
-        {active.stage !== "REVIEW" && <Panel className="flex min-h-[560px] flex-col overflow-hidden"><div className="border-b border-[#ededf0] bg-[#fcfcfd] px-5 py-4"><div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#eef0fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5" /></div><p className="text-sm font-semibold text-[#2d2f39]">Describe it to Kimsy</p></div></div><div className="flex-1 p-5"><div className="rounded-[13px] bg-[#f1f2f8] p-4 text-sm leading-6 text-[#505464]">{assistantMessage}</div>{warnings.length > 0 && <div className="mt-3 rounded-[10px] border border-[#ead5a5] bg-[#fffaf0] p-3"><p className="text-[10px] font-bold uppercase text-[#87651d]">Check these points</p>{warnings.slice(0, 5).map((warning) => <p key={warning} className="mt-1.5 text-xs leading-5 text-[#74623e]">{warning}</p>)}</div>}{error && <p className="mt-3 rounded-[10px] border border-[#efc0bb] bg-[#fff2f0] px-3 py-2 text-xs leading-5 text-[#9d3328]">{error}</p>}</div><div className="border-t border-[#ededf0] p-4"><textarea aria-label="Message Kimsy" rows={4} value={message} onChange={(event) => setMessage(event.target.value)} className="w-full resize-none rounded-[12px] border border-[#dedfe5] px-3 py-2.5 text-sm leading-6 shadow-sm placeholder:text-[#9a9daa] focus:border-[#7785d8] focus:outline-none focus:ring-3 focus:ring-[#e9ebfa]" placeholder={active.stage === "ORGANIZATION" ? "We have three business areas..." : active.stage === "SCENARIOS" ? "These files contain our current risk taxonomy..." : "Describe what you use today..."} />{files.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{files.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex items-center gap-1.5 rounded-[7px] bg-[#f0f0f3] px-2 py-1 text-[10px] font-semibold text-[#676a78]">{file.name}<button aria-label={`Remove ${file.name}`} onClick={() => setFiles(files.filter((_, itemIndex) => itemIndex !== index))}><X className="h-3 w-3" /></button></span>)}</div>}<div className="mt-3 flex items-center justify-between"><input ref={inputRef} type="file" multiple accept=".pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} /><Button variant="secondary" onClick={() => inputRef.current?.click()}><FileUp className="h-4 w-4" />Attach files</Button><Button loading={loading} disabled={!aiConfigured || (!message.trim() && !files.length)} onClick={askKimsy}>{loading ? "Interpreting" : "Create proposal"}{!loading && <Send className="h-4 w-4" />}</Button></div></div></Panel>}
-        <Panel className="min-h-[560px] overflow-hidden"><div className="flex items-start justify-between border-b border-[#e2e7e5] px-5 py-4"><div><p className="text-sm font-semibold">Structured preview</p><p className="mt-1 text-xs text-[#71807a]">Review and edit before you continue.</p></div><Badge tone="info">You control this</Badge></div><div className="p-5"><StructuredEditor stage={active.stage} configuration={configuration} setConfiguration={setConfiguration} /></div></Panel>
-      </div>
-      <div className="mt-5 flex items-center justify-between"><Button variant="ghost" disabled={step === 0} onClick={() => setStep((current) => current - 1)}><ArrowLeft className="h-4 w-4" />Back</Button>{active.stage === "REVIEW" ? <Button disabled={!canContinue} onClick={() => completeOnboarding(configuration)}>Create my workspace<CheckCircle2 className="h-4 w-4" /></Button> : <Button disabled={!canContinue} onClick={() => { setStep((current) => current + 1); setWarnings([]); setError(""); setAssistantMessage("Tell me what you use today, or attach the source material. I’ll propose a structure for you to confirm."); }}>Confirm and continue<ArrowRight className="h-4 w-4" /></Button>}</div>
-    </div>
+  const confirmStage = (stage: ConfigurationStage) => {
+    if (!stageReady(stage, configuration)) return;
+    const index = setupStages.findIndex((item) => item.stage === stage);
+    const next = setupStages[index + 1];
+    setConfirmedStages((current) => current.includes(stage) ? current : [...current, stage]);
+    if (next) {
+      setActiveStage(next.stage);
+      setMessages((current) => [...current,
+        { id: setupMessageId("confirmed"), role: "user", text: `${setupStages[index].label} looks right. Let’s continue.` },
+        { id: setupMessageId("question"), role: "assistant", text: next.prompt },
+      ]);
+    } else {
+      setActiveStage("REVIEW");
+      setMessages((current) => [...current,
+        { id: setupMessageId("confirmed"), role: "user", text: "The assessment method looks right." },
+        { id: setupMessageId("review"), role: "assistant", text: "That gives us a complete first version. Review the workspace summary below, make any last edits, and create it when you’re ready.", artifactStage: "REVIEW" },
+      ]);
+    }
+    setMessage("");
+    setError("");
+  };
+
+  return <div className="flex min-h-screen flex-col bg-[#f5f5f7]">
+    <header className="shrink-0"><div className="mx-auto flex h-[72px] max-w-[1180px] items-center px-4 sm:px-6"><Sparkles className="h-6 w-6 stroke-[1.5] text-[#25262f]" /><p className="font-display ml-2.5 text-[27px] leading-none text-[#20212a]">Kimsy</p><div className="ml-auto flex items-center gap-3"><p className="hidden text-xs text-[#858895] sm:block">Setup stays private to this browser</p><button onClick={loadSample} className="rounded-full border border-[#dedfe5] bg-white px-4 py-2 text-xs font-semibold text-[#4e5261] shadow-sm hover:bg-[#f9f9fb]">Explore sample workspace</button></div></div></header>
+    <main className="mx-auto flex w-full max-w-[1080px] flex-1 min-h-0 px-3 pb-3 sm:px-6 sm:pb-6">
+      <section className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-[22px] border border-[#e2e3e8] bg-white shadow-[var(--shadow-panel)]" aria-label="Workspace setup conversation">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#727687]">Workspace setup</p><h1 className="font-display mt-1 text-[27px] text-[#25262f]">Build it with Kimsy</h1></div><div className="flex items-center gap-1.5">{setupStages.map((item, index) => <div key={item.stage} title={item.label} className={`h-2 rounded-full transition-all ${index < progressIndex ? "w-5 bg-[#586ad0]" : index === progressIndex ? "w-8 bg-[#586ad0]" : "w-5 bg-[#dedfe5]"}`} />)}<span className="ml-2 text-[11px] font-medium text-[#777a88]">{activeStage === "REVIEW" ? "Ready to review" : `${progressIndex + 1} of ${setupStages.length} · ${activeDefinition?.label}`}</span></div></div>
+
+        {aiConfigured === false && <div className="flex shrink-0 items-start gap-3 border-b border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-6"><KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-[#8a6417]" /><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-[#765514]">AI setup needs an API key</p><p className="mt-1 text-xs leading-5 text-[#7c6a45]">Add <code className="rounded bg-white px-1 py-0.5">OPENAI_API_KEY</code> to <code className="rounded bg-white px-1 py-0.5">.env.local</code> and restart. You can still complete every section manually.</p></div><button onClick={revealManualEditor} className="shrink-0 text-xs font-semibold text-[#765514] underline underline-offset-2">Set up manually</button></div>}
+
+        <Conversation className="min-h-0 flex-1">
+          <ConversationContent className="mx-auto w-full max-w-[900px] gap-6 px-4 py-7 sm:px-6 sm:py-9">
+            {messages.map((item) => <Message from={item.role} key={item.id} className="max-w-full">
+              {item.role === "assistant" && <div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5" /></span>Kimsy</div>}
+              <MessageContent className={item.role === "assistant" ? "w-full max-w-[760px]" : "max-w-[82%] rounded-[14px] bg-[#f0f1f4] px-4 py-3"}><MessageResponse className="text-[14px] leading-7 text-[#3e414d]">{item.text}</MessageResponse></MessageContent>
+              {item.sourceNames && item.sourceNames.length > 0 && <div className={`flex flex-wrap gap-1.5 ${item.role === "user" ? "justify-end" : ""}`}>{item.sourceNames.map((name, index) => <span key={`${name}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-[#e0e1e6] bg-white px-2.5 py-1 text-[10px] font-medium text-[#696c79]"><Paperclip className="h-3 w-3" />{name}</span>)}</div>}
+              {item.artifactStage && latestArtifacts.get(item.artifactStage) === item.id && <SetupArtifact stage={item.artifactStage} configuration={configuration} setConfiguration={setConfiguration} confirmed={item.artifactStage !== "REVIEW" && confirmedStages.includes(item.artifactStage)} active={activeStage === item.artifactStage} warnings={item.warnings ?? []} onConfirm={() => confirmStage(item.artifactStage as ConfigurationStage)} onComplete={() => completeOnboarding(configuration)} />}
+            </Message>)}
+            {loading && <Message from="assistant"><div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5 animate-pulse" /></span>Kimsy</div><MessageContent><div className="flex items-center gap-2 py-2 text-sm text-[#767987]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#586ad0]" />Structuring your material…</div></MessageContent></Message>}
+          </ConversationContent>
+          <ConversationScrollButton className="bottom-3" />
+        </Conversation>
+
+        {activeStage !== "REVIEW" ? <div className="shrink-0 border-t border-[#ededf0] bg-[#fcfcfd] px-3 py-3 sm:px-5 sm:py-4"><div className="mx-auto max-w-[860px]">{!latestArtifacts.has(activeStage) && <div className="mb-3 flex items-center gap-2"><Suggestions>{suggestions[activeStage].map((suggestion) => <Suggestion key={suggestion} suggestion={suggestion} onClick={setMessage} className="h-8 border-[#e2e3e8] bg-white px-3 text-[11px] text-[#646775] shadow-sm hover:bg-[#f5f5f8]" />)}</Suggestions><button onClick={revealManualEditor} className="hidden shrink-0 text-[11px] font-semibold text-[#586ad0] sm:block">Enter manually</button></div>}<PromptInput onSubmit={sendToKimsy} onError={(inputError) => setError(inputError.message)} accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,image/*" multiple maxFiles={8} maxFileSize={15 * 1024 * 1024} className="rounded-[16px] bg-white shadow-[0_8px_28px_rgba(35,36,45,0.08)]"><PromptInputTextarea aria-label="Message Kimsy" value={message} onChange={(event) => setMessage(event.target.value)} disabled={loading} placeholder={activeDefinition?.prompt} className="min-h-[72px] px-4 pt-3 text-sm leading-6" /><PromptAttachments loading={loading} aiConfigured={aiConfigured} message={message} /></PromptInput>{error && <p className="mt-2 flex items-start gap-2 px-1 text-xs leading-5 text-[#9d3328]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</p>}</div></div> : <div className="shrink-0 border-t border-[#ededf0] bg-[#fcfcfd] px-5 py-3 text-center text-xs text-[#7b7e8c]">Review the inline components above. Nothing is saved until you create the workspace.</div>}
+      </section>
+    </main>
   </div>;
 }

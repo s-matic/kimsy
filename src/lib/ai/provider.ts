@@ -10,6 +10,7 @@ export interface AiSourceInput {
 export interface ConfigureInput {
   stage: "ORGANIZATION" | "WORKFLOW" | "SCENARIOS" | "DESIGN";
   message: string;
+  conversation: string;
   configuration: WorkspaceConfiguration;
   sources: AiSourceInput;
 }

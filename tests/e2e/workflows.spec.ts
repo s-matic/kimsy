@@ -3,11 +3,57 @@ import { expect, test } from "@playwright/test";
 test("fresh workspace starts with AI-guided onboarding and can load the sample", async ({ page }) => {
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: false } }));
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Describe how your organization works" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Build it with Kimsy" })).toBeVisible();
   await expect(page.getByText("AI setup needs an API key")).toBeVisible();
+  const prompt = page.getByLabel("Message Kimsy");
+  await expect(prompt).toBeEnabled();
+  await expect(prompt.locator("xpath=ancestor::*[@data-slot='input-group']")).toHaveCSS("opacity", "1");
+  await page.getByRole("button", { name: "Set up manually" }).click();
+  await page.getByLabel("Organization name").fill("Manual Test Company");
+  await page.getByRole("button", { name: "Add unit" }).click();
+  await page.getByLabel("Unit name").fill("Compliance");
+  await page.getByRole("button", { name: "Confirm organization" }).click();
+  await expect(page.getByText("Who should own assessments")).toBeVisible();
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
   await expect(page.getByRole("heading", { name: /Welcome back/ })).toBeVisible();
   await expect(page.getByText("Continue where you left off")).toBeVisible();
+});
+
+test("AI setup messages appear immediately before the editable proposal", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: true } }));
+  await page.route("**/api/ai/configure", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({ json: {
+      assistantMessage: "I mapped the organization and reporting line from your description.",
+      configuration: {
+        organizationName: "Conversation Bank",
+        units: [
+          { id: "unit-business", name: "Business", parentId: null, description: "First line" },
+          { id: "unit-compliance", name: "Compliance", parentId: "unit-business", description: "Second line" },
+        ],
+        review: { mode: "SOLO", assessorName: "", reviewerName: "" },
+        scenarios: [],
+        fields: [],
+        calculations: [],
+        finalRatingFieldId: "",
+      },
+      warnings: [],
+      sources: [],
+    } });
+  });
+
+  await page.goto("/");
+  const prompt = page.getByLabel("Message Kimsy");
+  await prompt.fill("We have a business team with compliance as second line.");
+  await page.getByRole("button", { name: "Submit" }).click();
+  await expect(page.getByText("We have a business team with compliance as second line.")).toBeVisible();
+  await expect(prompt).toHaveValue("");
+  await expect(page.getByText("Structuring your material…")).toBeVisible();
+  await expect(page.getByText("I mapped the organization and reporting line")).toBeVisible();
+  await expect(page.getByLabel("Organization name")).toHaveValue("Conversation Bank");
+  await expect(page.getByTestId("org-unit-unit-compliance")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm organization" }).click();
+  await expect(page.getByText("Who should own assessments")).toBeVisible();
 });
 
 test("sample workspace creates a unit-scoped assessment conversation", async ({ page }) => {

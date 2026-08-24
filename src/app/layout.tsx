@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell";
 import { StoreProvider } from "@/lib/store";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "Kimsy | AI risk assessment workspace",
@@ -10,11 +15,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className={cn("h-full antialiased", "font-sans", geist.variable)}>
       <body className="min-h-full">
-        <StoreProvider>
-          <AppShell>{children}</AppShell>
-        </StoreProvider>
+        <TooltipProvider>
+          <StoreProvider>
+            <AppShell>{children}</AppShell>
+          </StoreProvider>
+        </TooltipProvider>
       </body>
     </html>
   );
