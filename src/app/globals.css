@@ -133,6 +133,10 @@ a {
   letter-spacing: -0.035em;
 }
 
+.font-display.font-display-sidebar {
+  font-weight: 600;
+}
+
 input,
 textarea,
 select {

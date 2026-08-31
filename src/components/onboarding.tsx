@@ -14,6 +14,7 @@ import {
   Paperclip,
   Plus,
   Rows3,
+  Search,
   Sparkles,
   TableProperties,
   Trash2,
@@ -42,6 +43,7 @@ import {
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { BrandMark } from "@/components/brand-mark";
 import { Badge, Button, Panel } from "@/components/ui";
 import { validateConfiguration } from "@/lib/scoring";
 import { starterConfiguration } from "@/lib/seed";
@@ -103,10 +105,10 @@ function OrganizationTreeNode({ unit, units, depth = 0, ancestry = new Set<strin
   const [collapsed, setCollapsed] = useState(false);
   const children = units.filter((candidate) => candidate.parentId === unit.id);
   const path = new Set(ancestry).add(unit.id);
-  return <div className={depth ? "relative ml-5 border-l border-[#cddbd6] pl-5" : ""} data-testid={`org-unit-${unit.id}`}>
-    {depth > 0 && <span className="absolute -left-px top-7 h-px w-5 -translate-x-0 bg-[#cddbd6]" />}
-    <div className="relative min-w-[260px] rounded-[7px] border border-[#d7e1dd] bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(23,34,30,0.04)]">
-      <div className="flex items-start gap-3"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-[#e7f4f1] text-[#0f766e]"><Building2 className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-[#26332e]">{unit.name || "Unnamed unit"}</p>{children.length > 0 && <Badge>{collapsed ? `${children.length} hidden` : `${children.length} direct`}</Badge>}</div>{unit.description && <p className="mt-1 text-xs leading-5 text-[#6b7973]">{unit.description}</p>}</div>{children.length > 0 && <button type="button" aria-label={`${collapsed ? "Expand" : "Collapse"} ${unit.name || "unnamed unit"}`} aria-expanded={!collapsed} onClick={() => setCollapsed((current) => !current)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] text-[#66756f] transition-colors hover:bg-[#edf4f1] hover:text-[#0f766e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f766e]">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>}</div>
+  return <div className={depth ? "relative ml-5 border-l border-[#dfe1e8] pl-5" : ""} data-testid={`org-unit-${unit.id}`}>
+    {depth > 0 && <span className="absolute -left-px top-7 h-px w-5 bg-[#dfe1e8]" />}
+    <div className="relative min-w-[260px] rounded-[10px] border border-[#e0e2e8] bg-white px-3.5 py-3 transition-colors hover:border-[#cfd3df]">
+      <div className="flex items-start gap-3"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-[#f0f1f8] text-[#6676d8]"><Building2 className="h-3.5 w-3.5" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-[#30333c]">{unit.name || "Unnamed unit"}</p>{children.length > 0 && <span className="rounded-full border border-[#dfe1e8] bg-[#f7f7f9] px-2 py-0.5 text-[10px] font-semibold text-[#747886]">{collapsed ? `${children.length} hidden` : `${children.length} direct`}</span>}</div>{unit.description && <p className="mt-1 text-xs leading-5 text-[#777b86]">{unit.description}</p>}</div>{children.length > 0 && <button type="button" aria-label={`${collapsed ? "Expand" : "Collapse"} ${unit.name || "unnamed unit"}`} aria-expanded={!collapsed} onClick={() => setCollapsed((current) => !current)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] text-[#747886] transition-colors hover:bg-[#f0f1f6] hover:text-[#586ad0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6676d8]">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>}</div>
     </div>
     {!collapsed && children.length > 0 && <div className="space-y-2 pt-2">{children.map((child, index) => path.has(child.id) ? <div key={`${child.id}-${index}`} className="ml-5 rounded-[6px] border border-[#ead5a5] bg-[#fffaf0] px-3 py-2 text-xs text-[#7b5b1d]">Circular parent link involving {child.name || "an unnamed unit"}</div> : <OrganizationTreeNode key={`${child.id}-${index}`} unit={child} units={units} depth={depth + 1} ancestry={path} />)}</div>}
   </div>;
@@ -117,10 +119,10 @@ function OrganizationHierarchy({ configuration }: { configuration: WorkspaceConf
   const reachable = reachableUnitIds(configuration.units);
   const unplaced = configuration.units.filter((unit) => !reachable.has(unit.id));
   return <div className="space-y-3">
-    <div className="rounded-[14px] border border-[#30313b] bg-[#292a33] px-4 py-3.5 text-white shadow-sm">
-      <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#aeb9f5] text-[#242630]"><Network className="h-4 w-4" /></div><div><p className="text-sm font-semibold">{configuration.organizationName || "Your organization"}</p><p className="mt-0.5 text-[10px] text-[#bfc1ca]">{configuration.units.length} organizational units</p></div></div>
+    <div className="rounded-[12px] border border-[#dfe1e9] bg-[#f7f7fb] px-4 py-3.5">
+      <div className="flex items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[#dfe2f0] bg-white text-[#586ad0]"><Network className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#888b98]">Organization</p><p className="mt-0.5 truncate text-sm font-semibold text-[#2f313b]">{configuration.organizationName || "Your organization"}</p></div><span className="shrink-0 rounded-full border border-[#dfe1e9] bg-white px-2.5 py-1 text-[10px] font-semibold text-[#707481]">{configuration.units.length} unit{configuration.units.length === 1 ? "" : "s"}</span></div>
     </div>
-    {roots.length > 0 ? <div className="overflow-x-auto pb-1"><div className="min-w-[320px] space-y-2 pl-3">{roots.map((unit, index) => <OrganizationTreeNode key={`${unit.id}-${index}`} unit={unit} units={configuration.units} />)}</div></div> : <p className="rounded-[6px] border border-dashed border-[#cfd8d4] px-4 py-7 text-center text-xs text-[#7a8782]">No top-level units yet. Switch to Edit details to add one.</p>}
+    {roots.length > 0 ? <div className="overflow-x-auto pb-1"><div className="relative min-w-[320px] space-y-2 pl-8 before:absolute before:bottom-7 before:left-3 before:top-0 before:w-px before:bg-[#dfe1e8]">{roots.map((unit, index) => <div key={`${unit.id}-${index}`} className="relative before:absolute before:-left-5 before:top-7 before:h-px before:w-5 before:bg-[#dfe1e8]"><OrganizationTreeNode unit={unit} units={configuration.units} /></div>)}</div></div> : <p className="rounded-[6px] border border-dashed border-[#cfd8d4] px-4 py-7 text-center text-xs text-[#7a8782]">No top-level units yet. Switch to Edit details to add one.</p>}
     {unplaced.length > 0 && <div className="rounded-[7px] border border-[#ead5a5] bg-[#fffaf0] p-3"><p className="text-xs font-semibold text-[#7b5b1d]">{unplaced.length} unit{unplaced.length === 1 ? " is" : "s are"} not connected to the hierarchy</p><p className="mt-1 text-[11px] leading-5 text-[#786846]">Check their parent assignments in Edit details: {unplaced.map((unit) => unit.name || "Unnamed unit").join(", ")}.</p></div>}
   </div>;
 }
@@ -159,18 +161,80 @@ function WorkflowEditor({ configuration, setConfiguration }: EditorProps) {
 }
 
 function ScenariosEditor({ configuration, setConfiguration }: EditorProps) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("ALL");
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const update = (id: string, patch: Partial<RiskScenario>) => setConfiguration({ ...configuration, scenarios: configuration.scenarios.map((scenario) => scenario.id === id ? { ...scenario, ...patch } : scenario) });
+  const categories = [...new Set(configuration.scenarios.map((scenario) => scenario.category.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleScenarios = configuration.scenarios.filter((scenario) => {
+    const matchesCategory = category === "ALL" || scenario.category === category;
+    const matchesQuery = !normalizedQuery || [scenario.code, scenario.title, scenario.category, scenario.description].some((value) => value.toLowerCase().includes(normalizedQuery));
+    return matchesCategory && matchesQuery;
+  });
+  const toggleExpanded = (id: string) => setExpandedIds((current) => current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id]);
+  const addScenario = () => {
+    const id = `scenario-${Date.now()}`;
+    setConfiguration({ ...configuration, scenarios: [...configuration.scenarios, { id, code: "", title: "", category: "", description: "", sourceCitations: [] }] });
+    setQuery("");
+    setCategory("ALL");
+    setExpandedIds((current) => [...current, id]);
+  };
+  const removeScenario = (id: string) => {
+    setConfiguration({ ...configuration, scenarios: configuration.scenarios.filter((candidate) => candidate.id !== id) });
+    setExpandedIds((current) => current.filter((candidate) => candidate !== id));
+  };
+
   return <div className="space-y-3">
-    <div className="flex items-center justify-between"><p className="text-xs font-semibold text-[#42504a]">{configuration.scenarios.length} risk scenarios</p><button onClick={() => setConfiguration({ ...configuration, scenarios: [...configuration.scenarios, { id: `scenario-${Date.now()}`, code: "", title: "", category: "", description: "", sourceCitations: [] }] })} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0f766e]"><Plus className="h-3.5 w-3.5" />Add scenario</button></div>
-    <div className="max-h-[510px] space-y-2 overflow-y-auto pr-1">
-      {configuration.scenarios.map((scenario) => <div key={scenario.id} className="rounded-[6px] border border-[#dfe5e2] bg-[#fbfcfc] p-3">
-        <div className="grid gap-2 sm:grid-cols-[110px_1fr_1fr_auto]"><input aria-label="Scenario code" className={inputClass()} value={scenario.code} onChange={(event) => update(scenario.id, { code: event.target.value })} placeholder="Code" /><input aria-label="Scenario title" className={inputClass()} value={scenario.title} onChange={(event) => update(scenario.id, { title: event.target.value })} placeholder="Scenario title" /><input aria-label="Scenario category" className={inputClass()} value={scenario.category} onChange={(event) => update(scenario.id, { category: event.target.value })} placeholder="Category" /><button aria-label={`Remove ${scenario.title || "scenario"}`} onClick={() => setConfiguration({ ...configuration, scenarios: configuration.scenarios.filter((candidate) => candidate.id !== scenario.id) })} className="h-10 rounded-[5px] px-2 text-[#8b5b57] hover:bg-[#fff0ee]"><Trash2 className="h-4 w-4" /></button></div>
-        <textarea aria-label={`Description for ${scenario.title || "scenario"}`} rows={2} className="mt-2 w-full resize-y rounded-[6px] border border-[#cfd8d4] bg-white px-3 py-2 text-sm" value={scenario.description} onChange={(event) => update(scenario.id, { description: event.target.value })} placeholder="What could happen?" />
-        {scenario.sourceCitations.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{scenario.sourceCitations.map((citation, index) => <span key={`${citation.sourceName}-${index}`} className="rounded bg-[#edf2f0] px-2 py-1 text-[10px] text-[#65736d]">{citation.sourceName} · {citation.locator}</span>)}</div>}
-      </div>)}
-      {!configuration.scenarios.length && <p className="rounded-[6px] border border-dashed border-[#cfd8d4] px-4 py-7 text-center text-xs text-[#7a8782]">Upload your current scenario library or add a scenario manually.</p>}
-    </div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold text-[#42504a]">{configuration.scenarios.length} risk scenarios</p><p className="mt-1 text-[10px] text-[#7b8782]">Scan the library, then expand a row to review or edit it.</p></div><button onClick={addScenario} className="inline-flex items-center gap-1 self-start text-xs font-semibold text-[#586ad0]"><Plus className="h-3.5 w-3.5" />Add scenario</button></div>
+    {configuration.scenarios.length > 0 && <>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px]"><label className="relative"><span className="sr-only">Search risk scenarios</span><Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8e99]" /><input aria-label="Search risk scenarios" value={query} onChange={(event) => setQuery(event.target.value)} className={`${inputClass()} pl-9`} placeholder="Search code, title, category, or description" /></label><select aria-label="Filter risk scenarios by category" value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass()}><option value="ALL">All categories</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
+      <div className="overflow-hidden rounded-[8px] border border-[#dfe3e5] bg-white">
+        <div className="hidden grid-cols-[18px_88px_minmax(180px,1.5fr)_minmax(140px,1fr)_70px_36px] gap-3 border-b border-[#e4e6e9] bg-[#f7f7f9] px-3 py-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#818491] sm:grid"><span /><span>Code</span><span>Scenario</span><span>Category</span><span>Sources</span><span /></div>
+        <div className="max-h-[520px] overflow-y-auto">
+          {visibleScenarios.map((scenario) => {
+            const expanded = expandedIds.includes(scenario.id);
+            return <div key={scenario.id} className="border-b border-[#e9eaed] last:border-b-0">
+              <div className="grid grid-cols-[minmax(0,1fr)_40px] items-stretch hover:bg-[#fafafd]">
+                <button type="button" aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${scenario.title || scenario.code || "scenario"}`} onClick={() => toggleExpanded(scenario.id)} className="grid min-w-0 grid-cols-[18px_70px_minmax(0,1fr)] items-center gap-2 px-3 py-3 text-left sm:grid-cols-[18px_88px_minmax(180px,1.5fr)_minmax(140px,1fr)_70px] sm:gap-3">
+                  <ChevronRight className={`h-3.5 w-3.5 text-[#777b89] transition-transform ${expanded ? "rotate-90" : ""}`} />
+                  <span className="truncate font-mono text-[11px] font-semibold text-[#626676]">{scenario.code || "No code"}</span>
+                  <span className="truncate text-xs font-semibold text-[#30323c]">{scenario.title || "Untitled scenario"}</span>
+                  <span className="hidden truncate text-[11px] text-[#6f7380] sm:block">{scenario.category || "Uncategorized"}</span>
+                  <span className="hidden text-[10px] text-[#858895] sm:block">{scenario.sourceCitations.length || "—"}</span>
+                </button>
+                <button type="button" aria-label={`Remove ${scenario.title || "scenario"}`} onClick={() => removeScenario(scenario.id)} className="flex items-center justify-center text-[#9a6964] opacity-60 hover:bg-[#fff2f0] hover:opacity-100"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+              {expanded && <div className="border-t border-[#e6e7eb] bg-[#fafafd] p-3 sm:p-4">
+                <div className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)]"><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Code</span><input aria-label="Scenario code" className={inputClass()} value={scenario.code} onChange={(event) => update(scenario.id, { code: event.target.value })} placeholder="Code" /></label><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Scenario</span><input aria-label="Scenario title" className={inputClass()} value={scenario.title} onChange={(event) => update(scenario.id, { title: event.target.value })} placeholder="Scenario title" /></label><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Category</span><input aria-label="Scenario category" className={inputClass()} value={scenario.category} onChange={(event) => update(scenario.id, { category: event.target.value })} placeholder="Category" /></label></div>
+                <label className="mt-3 block"><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Description and guidance</span><textarea aria-label={`Description for ${scenario.title || "scenario"}`} rows={4} className="w-full resize-y rounded-[6px] border border-[#cfd4d8] bg-white px-3 py-2 text-xs leading-5 outline-none focus:border-[#7785d8] focus:ring-3 focus:ring-[#e9ebfa]" value={scenario.description} onChange={(event) => update(scenario.id, { description: event.target.value })} placeholder="What could happen?" /></label>
+                {scenario.sourceCitations.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{scenario.sourceCitations.map((citation, index) => <span key={`${citation.sourceName}-${index}`} className="rounded bg-[#edf2f0] px-2 py-1 text-[10px] text-[#65736d]">{citation.sourceName} · {citation.locator}</span>)}</div>}
+              </div>}
+            </div>;
+          })}
+          {visibleScenarios.length === 0 && <p className="px-4 py-10 text-center text-xs text-[#7a7e8a]">No scenarios match this search and category.</p>}
+        </div>
+      </div>
+      <p className="text-[10px] text-[#858895]">Showing {visibleScenarios.length} of {configuration.scenarios.length} scenarios</p>
+    </>}
+    {!configuration.scenarios.length && <p className="rounded-[6px] border border-dashed border-[#cfd8d4] px-4 py-7 text-center text-xs text-[#7a8782]">Upload your current scenario library or add a scenario manually.</p>}
   </div>;
+}
+
+function FieldOptionsInput({ field, onChange }: { field: FieldDefinition; onChange: (options: FieldDefinition["options"]) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const serializedOptions = field.options.map((option) => option.label).join(", ");
+  const updateOptions = (value: string) => {
+    setDraft(value);
+    const labels = value.split(",").map((label) => label.trim()).filter(Boolean);
+    onChange(labels.map((label, index) => ({
+      id: field.options[index]?.id ?? slug(label),
+      label,
+      score: field.options[index]?.score ?? index + 1,
+    })));
+  };
+
+  return <label className="mt-2 block"><span className="text-[10px] font-bold uppercase text-[#7a8782]">Options</span><input aria-label={`Options for ${field.label}`} className={`${inputClass()} mt-1`} value={draft ?? serializedOptions} onChange={(event) => updateOptions(event.target.value)} onBlur={() => setDraft(null)} placeholder="Low, Moderate, High, Severe" /></label>;
 }
 
 function DesignEditor({ configuration, setConfiguration }: EditorProps) {
@@ -181,7 +245,7 @@ function DesignEditor({ configuration, setConfiguration }: EditorProps) {
       {configuration.fields.map((field) => <div key={field.id} className="rounded-[6px] border border-[#dfe5e2] bg-[#fbfcfc] p-3">
         <div className="grid gap-2 sm:grid-cols-[1fr_160px_auto]"><input aria-label="Field label" className={inputClass()} value={field.label} onChange={(event) => update(field.id, { label: event.target.value })} /><select aria-label={`Type for ${field.label}`} className={inputClass()} value={field.type} onChange={(event) => update(field.id, { type: event.target.value as FieldType, options: event.target.value === "SINGLE_SELECT" || event.target.value === "MULTI_SELECT" || event.target.value === "CALCULATED" ? field.options : [] })}>{fieldTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select><button aria-label={`Remove ${field.label}`} disabled={configuration.calculations.some((calculation) => calculation.outputFieldId === field.id || (calculation.type === "MATRIX" && (calculation.rowFieldId === field.id || calculation.columnFieldId === field.id)) || (calculation.type === "THRESHOLD" && calculation.terms.some((term) => term.fieldId === field.id)))} onClick={() => setConfiguration({ ...configuration, fields: configuration.fields.filter((candidate) => candidate.id !== field.id) })} className="h-10 rounded-[5px] px-2 text-[#8b5b57] hover:bg-[#fff0ee] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 className="h-4 w-4" /></button></div>
         <input aria-label={`Help text for ${field.label}`} className={`${inputClass()} mt-2`} value={field.helpText} onChange={(event) => update(field.id, { helpText: event.target.value })} placeholder="Helpful guidance for the assessor" />
-        {(field.type === "SINGLE_SELECT" || field.type === "MULTI_SELECT" || field.type === "CALCULATED") && <label className="mt-2 block"><span className="text-[10px] font-bold uppercase text-[#7a8782]">Options</span><input aria-label={`Options for ${field.label}`} className={`${inputClass()} mt-1`} value={field.options.map((option) => option.label).join(", ")} onChange={(event) => update(field.id, { options: event.target.value.split(",").map((label) => label.trim()).filter(Boolean).map((label, index) => ({ id: field.options[index]?.id ?? slug(label), label, score: field.options[index]?.score ?? index + 1 })) })} placeholder="Low, Moderate, High, Severe" /></label>}
+        {(field.type === "SINGLE_SELECT" || field.type === "MULTI_SELECT" || field.type === "CALCULATED") && <FieldOptionsInput field={field} onChange={(options) => update(field.id, { options })} />}
       </div>)}
     </div>
     <div>
@@ -276,7 +340,7 @@ function SetupArtifact({ stage, configuration, setConfiguration, confirmed, acti
   return <Panel className="mt-3 w-full overflow-hidden border-[#dedfe5] shadow-[0_10px_36px_rgba(35,36,45,0.07)]">
     <div className="flex items-center gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-3.5 sm:px-5"><div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#eff1fb] text-[#586ad0]"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#2c2e38]">{definition.label}</p><p className="mt-0.5 text-[11px] text-[#818491]">Generated from this conversation · edit anything inline</p></div>{confirmed ? <Badge tone="success"><Check className="mr-1 h-3 w-3" />Confirmed</Badge> : <Badge tone="info">Draft</Badge>}</div>
     <div className="p-4 sm:p-5"><StructuredEditor stage={stage} configuration={configuration} setConfiguration={setConfiguration} /></div>
-    {stage !== "ORGANIZATION" && stage !== "SCENARIOS" && warnings.length > 0 && <div className="border-t border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-5">{warnings.slice(0, 5).map((warning) => <p key={warning} className="flex items-start gap-2 text-xs leading-5 text-[#735d32]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{warning}</p>)}</div>}
+    {stage !== "ORGANIZATION" && stage !== "SCENARIOS" && stage !== "DESIGN" && warnings.length > 0 && <div className="border-t border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-5">{warnings.slice(0, 5).map((warning) => <p key={warning} className="flex items-start gap-2 text-xs leading-5 text-[#735d32]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{warning}</p>)}</div>}
     {stage === "REVIEW" ? <div className="flex flex-col gap-3 border-t border-[#ededf0] bg-[#fafafd] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"><p className="text-xs text-[#727584]">{ready ? "Everything is ready. You can still edit any component above." : "Resolve the checks in the review before creating the workspace."}</p><Button disabled={!ready} onClick={onComplete}>Create my workspace<CheckCircle2 className="h-4 w-4" /></Button></div> : active && !confirmed ? <div className="flex flex-col gap-3 border-t border-[#ededf0] bg-[#fafafd] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"><p className="text-xs text-[#727584]">{ready ? "Does this look right? You can keep editing after confirming." : "Add the required details before continuing."}</p><Button disabled={!ready} onClick={onConfirm}>Confirm {definition.label.toLowerCase()}<Check className="h-4 w-4" /></Button></div> : null}
   </Panel>;
 }
@@ -376,7 +440,7 @@ export function Onboarding() {
   };
 
   return <div className="flex min-h-screen flex-col bg-[#f5f5f7]">
-    <header className="shrink-0"><div className="mx-auto flex h-[72px] max-w-[1180px] items-center px-4 sm:px-6"><Sparkles className="h-6 w-6 stroke-[1.5] text-[#25262f]" /><p className="font-display ml-2.5 text-[27px] leading-none text-[#20212a]">Kimsy</p><div className="ml-auto flex items-center gap-3"><p className="hidden text-xs text-[#858895] sm:block">Setup stays private to this browser</p><button onClick={loadSample} className="rounded-full border border-[#dedfe5] bg-white px-4 py-2 text-xs font-semibold text-[#4e5261] shadow-sm hover:bg-[#f9f9fb]">Explore sample workspace</button></div></div></header>
+    <header className="shrink-0"><div className="mx-auto flex h-[72px] max-w-[1180px] items-center px-4 sm:px-6"><BrandMark className="h-7 w-7" /><p className="font-display ml-2 text-[26px] leading-none text-[#20212a]">Kimsy</p><div className="ml-auto flex items-center gap-3"><p className="hidden text-xs text-[#858895] sm:block">Setup stays private to this browser</p><button onClick={loadSample} className="rounded-full border border-[#dedfe5] bg-white px-4 py-2 text-xs font-semibold text-[#4e5261] shadow-sm hover:bg-[#f9f9fb]">Explore sample workspace</button></div></div></header>
     <main className="mx-auto flex w-full max-w-[1080px] flex-1 min-h-0 px-3 pb-3 sm:px-6 sm:pb-6">
       <section className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-[22px] border border-[#e2e3e8] bg-white shadow-[var(--shadow-panel)]" aria-label="Workspace setup conversation">
         <div className="flex shrink-0 flex-col gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#727687]">Workspace setup</p><h1 className="font-display mt-1 text-[27px] text-[#25262f]">Build it with Kimsy</h1></div><div className="flex items-center gap-1.5">{setupStages.map((item, index) => <div key={item.stage} title={item.label} className={`h-2 rounded-full transition-all ${index < progressIndex ? "w-5 bg-[#586ad0]" : index === progressIndex ? "w-8 bg-[#586ad0]" : "w-5 bg-[#dedfe5]"}`} />)}<span className="ml-2 text-[11px] font-medium text-[#777a88]">{activeStage === "REVIEW" ? "Ready to review" : `${progressIndex + 1} of ${setupStages.length} · ${activeDefinition?.label}`}</span></div></div>

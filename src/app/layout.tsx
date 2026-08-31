@@ -11,6 +11,7 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 export const metadata: Metadata = {
   title: "Kimsy | AI risk assessment workspace",
   description: "Turn your existing risk methodology into a focused, AI-assisted assessment workspace.",
+  icons: { icon: [{ url: "/kimsy-icon.svg", type: "image/svg+xml" }] },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

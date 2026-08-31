@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, Clock3, FileText, MessageSquareText, Plus, SendHorizontal, Sparkles, Table2 } from "lucide-react";
 import { Onboarding } from "@/components/onboarding";
+import { BrandMark } from "@/components/brand-mark";
 import { Badge, EmptyState, Panel, PanelHeader } from "@/components/ui";
 import { useKimsy } from "@/lib/store";
 import type { AssessmentStatus } from "@/lib/types";
@@ -34,7 +35,7 @@ export default function Home() {
 
   return <div className="enter-soft space-y-8">
     <section className="flex min-h-[500px] flex-col items-center justify-center px-2 pb-8 pt-10 text-center lg:min-h-[540px] lg:pt-4">
-      <div className="flex flex-col items-center justify-center gap-2 text-[#24252e] sm:flex-row sm:gap-3"><Sparkles className="h-8 w-8 stroke-[1.35]" /><h1 className="font-display text-[38px] leading-tight sm:text-[48px]">Welcome back, {firstName}</h1></div>
+      <div className="flex flex-col items-center justify-center gap-2 text-[#24252e] sm:flex-row sm:gap-3"><BrandMark className="h-8 w-8 opacity-90 sm:translate-y-0.5" /><h1 className="font-display text-[38px] leading-tight sm:text-[48px]">Welcome back, {firstName}</h1></div>
       <p className="mt-4 max-w-xl text-sm leading-6 text-[#777a88]">Start a new assessment, continue your review, or ask Kimsy to structure what has changed.</p>
 
       <form onSubmit={(event) => { event.preventDefault(); startFromIntent(); }} className="mt-9 w-full max-w-[850px] rounded-[22px] border border-[#e3e4e8] bg-white p-3 text-left shadow-[var(--shadow-float)]">

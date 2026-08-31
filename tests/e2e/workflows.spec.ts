@@ -66,9 +66,26 @@ test("sample workspace creates a unit-scoped assessment conversation", async ({ 
   await page.getByLabel("Assessment period").fill("2027 planning review");
   await page.getByRole("button", { name: "Start conversation" }).click();
   await expect(page.getByRole("heading", { name: "Payments Operations" })).toBeVisible();
-  await expect(page.getByText("Focus on changes to outsourced payment operations.")).toBeVisible();
-  await expect(page.getByText("I’ve carried your initial brief")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer due diligence failure" })).toBeVisible();
+  await page.getByRole("button", { name: "Open assistant" }).click();
+  const assistant = page.getByRole("dialog", { name: "Assessment assistant" });
+  await expect(assistant.getByText("Focus on changes to outsourced payment operations.")).toBeVisible();
+  await expect(assistant.getByText("I’ve carried your initial brief")).toBeVisible();
+});
+
+test("assessment form stays primary and the assistant opens in a dialog", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.getByRole("link", { name: "Open conversation" }).click();
+  await expect(page).toHaveURL(/\/assessments\//);
+
+  await expect(page.getByLabel("Likelihood")).toBeVisible();
+  await page.getByRole("button", { name: "Open assistant" }).click();
+  const assistant = page.getByRole("dialog", { name: "Assessment assistant" });
+  await expect(assistant).toBeVisible();
+  await expect(assistant.getByLabel("Message Kimsy")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(assistant).toBeHidden();
 });
 
 test("organization setup can switch between hierarchy and editable details", async ({ page }) => {
@@ -88,6 +105,33 @@ test("organization setup can switch between hierarchy and editable details", asy
 
   await page.getByRole("button", { name: "Edit details", exact: true }).click();
   await expect(page.getByLabel("Unit name").first()).toBeVisible();
+});
+
+test("risk scenarios can be searched and expanded for editing", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.goto("/setup");
+  await page.getByRole("button", { name: /Risk scenarios/ }).click();
+
+  await page.getByLabel("Search risk scenarios").fill("transaction monitoring");
+  await expect(page.getByText("Showing 1 of 4 scenarios")).toBeVisible();
+  await page.getByRole("button", { name: "Expand Transaction monitoring coverage gap" }).click();
+  await expect(page.getByLabel("Scenario title")).toHaveValue("Transaction monitoring coverage gap");
+  await expect(page.getByText("Description and guidance")).toBeVisible();
+});
+
+test("assessment options accept commas and multi-word labels without losing focus", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.goto("/setup");
+  await page.getByRole("button", { name: /Assessment design/ }).click();
+
+  const options = page.getByLabel("Options for Likelihood");
+  await options.focus();
+  await options.press("End");
+  await options.pressSequentially(", Very High");
+  await expect(options).toBeFocused();
+  await expect(options).toHaveValue("Rare, Possible, Likely, Almost certain, Very High");
 });
 
 test("register values can be edited and calculated values update", async ({ page }) => {

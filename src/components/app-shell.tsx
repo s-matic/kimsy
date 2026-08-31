@@ -11,10 +11,10 @@ import {
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
   Table2,
   X,
 } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
 import { useKimsy } from "@/lib/store";
 
 const nav = [
@@ -33,8 +33,8 @@ function SidebarContent({ close, compact = false, toggleCompact }: { close?: () 
     <div className="flex h-full flex-col bg-[#fbfbfc] text-[#292a34]">
       <div className={`flex h-[74px] shrink-0 items-center ${compact ? "justify-center px-2" : "px-5"}`}>
         <Link href="/" onClick={close} className="flex min-w-0 items-center gap-2.5" aria-label="Kimsy home">
-          <Sparkles className="h-6 w-6 shrink-0 stroke-[1.5] text-[#25262f]" />
-          {!compact && <span className="font-display truncate text-[27px] leading-none text-[#20212a]">Kimsy</span>}
+          <BrandMark className="h-7 w-7" />
+          {!compact && <span className="font-display font-display-sidebar truncate text-[26px] leading-none text-[#20212a]">Kimsy</span>}
         </Link>
         {close ? (
           <button onClick={close} className="ml-auto rounded-lg p-1.5 text-[#777a88] hover:bg-[#eeeef2]" aria-label="Close navigation"><X className="h-4 w-4" /></button>
