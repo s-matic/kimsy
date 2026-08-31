@@ -107,6 +107,17 @@ test("organization setup can switch between hierarchy and editable details", asy
   await expect(page.getByLabel("Unit name").first()).toBeVisible();
 });
 
+test("reset workspace returns to onboarding at the base URL", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.goto("/setup");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Reset workspace" }).click();
+
+  await expect(page).toHaveURL("/");
+  await expect(page.getByRole("heading", { name: "Build it with Kimsy" })).toBeVisible();
+});
+
 test("risk scenarios can be searched and expanded for editing", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
