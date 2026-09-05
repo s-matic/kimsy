@@ -33,6 +33,7 @@ test("AI setup messages appear immediately before the editable proposal", async 
     await new Promise((resolve) => setTimeout(resolve, 500));
     const result = {
       stage: "ORGANIZATION",
+      assistantMessage: "I mapped the organization and reporting line from your description.",
       configuration: {
         organizationName: "Conversation Bank",
         units: [
@@ -54,16 +55,13 @@ test("AI setup messages appear immediately before the editable proposal", async 
       body: [
         uiStreamEvent({ type: "start", messageId: "assistant-setup" }),
         uiStreamEvent({ type: "start-step" }),
-        uiStreamEvent({ type: "tool-input-available", toolCallId: "setup-call", toolName: "proposeOrganization", input: {} }),
+        uiStreamEvent({ type: "tool-input-start", toolCallId: "setup-call", toolName: "proposeOrganization" }),
+        uiStreamEvent({ type: "tool-input-delta", toolCallId: "setup-call", inputTextDelta: '{"assistantMessage":"I mapped the organization' }),
+        uiStreamEvent({ type: "tool-input-delta", toolCallId: "setup-call", inputTextDelta: ' and reporting line from your description."}' }),
+        uiStreamEvent({ type: "tool-input-available", toolCallId: "setup-call", toolName: "proposeOrganization", input: { assistantMessage: result.assistantMessage } }),
         uiStreamEvent({ type: "tool-output-available", toolCallId: "setup-call", output: result }),
         uiStreamEvent({ type: "finish-step" }),
-        uiStreamEvent({ type: "start-step" }),
-        uiStreamEvent({ type: "text-start", id: "setup-text" }),
-        uiStreamEvent({ type: "text-delta", id: "setup-text", delta: "I mapped the organization" }),
-        uiStreamEvent({ type: "text-delta", id: "setup-text", delta: " and reporting line from your description." }),
-        uiStreamEvent({ type: "text-end", id: "setup-text" }),
-        uiStreamEvent({ type: "finish-step" }),
-        uiStreamEvent({ type: "finish", finishReason: "stop" }),
+        uiStreamEvent({ type: "finish", finishReason: "tool-calls" }),
         "data: [DONE]\n\n",
       ].join(""),
     });
@@ -76,7 +74,9 @@ test("AI setup messages appear immediately before the editable proposal", async 
   await expect(page.getByText("We have a business team with compliance as second line.")).toBeVisible();
   await expect(prompt).toHaveValue("");
   await expect(page.getByText("Structuring your material…")).toBeVisible();
+  await expect(page.getByTestId("setup-artifact-skeleton-ORGANIZATION")).toBeVisible();
   await expect(page.getByText("I mapped the organization and reporting line")).toBeVisible();
+  await expect(page.getByTestId("setup-artifact-skeleton-ORGANIZATION")).toHaveCount(0);
   await expect(page.getByLabel("Organization name")).toHaveValue("Conversation Bank");
   await expect(page.getByTestId("org-unit-unit-compliance")).toBeVisible();
   await page.getByRole("button", { name: "Confirm organization" }).click();
@@ -119,6 +119,7 @@ test("assessment agent streams its reply before showing a reviewable proposal", 
   await page.route("**/api/ai/workspace", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const result = {
+      assistantMessage: "I prepared one change for review.",
       summary: "Updated likelihood based on the new operational context.",
       changes: [{
         scenarioId: "scenario-cdd",
@@ -136,16 +137,13 @@ test("assessment agent streams its reply before showing a reviewable proposal", 
       body: [
         uiStreamEvent({ type: "start", messageId: "assistant-assessment" }),
         uiStreamEvent({ type: "start-step" }),
-        uiStreamEvent({ type: "tool-input-available", toolCallId: "assessment-call", toolName: "proposeRegisterChanges", input: {} }),
+        uiStreamEvent({ type: "tool-input-start", toolCallId: "assessment-call", toolName: "proposeRegisterChanges" }),
+        uiStreamEvent({ type: "tool-input-delta", toolCallId: "assessment-call", inputTextDelta: '{"assistantMessage":"I prepared one ' }),
+        uiStreamEvent({ type: "tool-input-delta", toolCallId: "assessment-call", inputTextDelta: 'change for review."}' }),
+        uiStreamEvent({ type: "tool-input-available", toolCallId: "assessment-call", toolName: "proposeRegisterChanges", input: { assistantMessage: result.assistantMessage } }),
         uiStreamEvent({ type: "tool-output-available", toolCallId: "assessment-call", output: result }),
         uiStreamEvent({ type: "finish-step" }),
-        uiStreamEvent({ type: "start-step" }),
-        uiStreamEvent({ type: "text-start", id: "assessment-text" }),
-        uiStreamEvent({ type: "text-delta", id: "assessment-text", delta: "I prepared one " }),
-        uiStreamEvent({ type: "text-delta", id: "assessment-text", delta: "change for review." }),
-        uiStreamEvent({ type: "text-end", id: "assessment-text" }),
-        uiStreamEvent({ type: "finish-step" }),
-        uiStreamEvent({ type: "finish", finishReason: "stop" }),
+        uiStreamEvent({ type: "finish", finishReason: "tool-calls" }),
         "data: [DONE]\n\n",
       ].join(""),
     });

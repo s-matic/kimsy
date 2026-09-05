@@ -24,6 +24,7 @@ interface AssessmentPromptInput extends AssessmentAgentContext {
 }
 
 const proposalInputSchema = z.object({
+  assistantMessage: z.string().describe("A concise message summarizing the proposed register update and reminding the assessor to review it before applying."),
   summary: z.string().describe("A concise summary of the proposed register changes."),
   changes: z.array(assessmentRowInputSchema).describe("Only rows supported by the user's request and supplied evidence."),
   warnings: z.array(z.string()).describe("Information gaps or ambiguities the assessor should resolve."),
@@ -39,10 +40,6 @@ export function createAssessmentAgent(context: AssessmentAgentContext) {
         validateAssessmentProposal(context.configuration, proposal);
         return { ...proposal, sources: context.sources };
       },
-      toModelOutput: ({ output }) => ({
-        type: "text",
-        value: `Prepared ${output.changes.length} reviewable register changes with ${output.warnings.length} warnings. Briefly summarize the result and remind the assessor to review the proposal before applying it.`,
-      }),
     }),
   };
 
@@ -57,15 +54,13 @@ export function createAssessmentAgent(context: AssessmentAgentContext) {
       "Mark a scenario not applicable only when the supplied facts support that conclusion.",
       "Give concise judgment-based rationales and precise page, paragraph, sheet, row, or image citations.",
       "When evidence is insufficient, omit unsupported field changes and explain the gap in warnings rather than guessing.",
-      "After the tool succeeds, respond in one or two natural sentences. The detailed proposal appears separately in the interface.",
+      "Put the short user-facing reply in assistantMessage before generating the larger proposal fields. The interface streams that field while the rest of the tool input is generated.",
     ].join(" "),
     tools,
     activeTools: [assessmentToolName],
-    stopWhen: stepCountIs(2),
+    toolChoice: { type: "tool", toolName: assessmentToolName },
+    stopWhen: stepCountIs(1),
     maxOutputTokens: 20000,
-    prepareStep: ({ stepNumber }) => stepNumber === 0
-      ? { activeTools: [assessmentToolName], toolChoice: { type: "tool", toolName: assessmentToolName } }
-      : { activeTools: [], toolChoice: "none", maxOutputTokens: 250 },
   });
 }
 

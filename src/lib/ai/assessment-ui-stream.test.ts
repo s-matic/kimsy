@@ -9,6 +9,7 @@ function event(chunk: UIMessageChunk) {
 describe("assessment agent UI stream", () => {
   it("keeps the proposal tool output while the assistant summary streams", async () => {
     const result = {
+      assistantMessage: "I prepared one change.",
       summary: "One supported change",
       changes: [{
         scenarioId: "scenario-one",
@@ -30,16 +31,13 @@ describe("assessment agent UI stream", () => {
     const payload = [
       event({ type: "start", messageId: "assistant-1" }),
       event({ type: "start-step" }),
-      event({ type: "tool-input-available", toolCallId: "call-1", toolName: "proposeRegisterChanges", input: {} }),
+      event({ type: "tool-input-start", toolCallId: "call-1", toolName: "proposeRegisterChanges" }),
+      event({ type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: '{"assistantMessage":"I prepared ' }),
+      event({ type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: 'one change."}' }),
+      event({ type: "tool-input-available", toolCallId: "call-1", toolName: "proposeRegisterChanges", input: { assistantMessage: "I prepared one change." } }),
       event({ type: "tool-output-available", toolCallId: "call-1", output: result }),
       event({ type: "finish-step" }),
-      event({ type: "start-step" }),
-      event({ type: "text-start", id: "text-1" }),
-      event({ type: "text-delta", id: "text-1", delta: "I prepared " }),
-      event({ type: "text-delta", id: "text-1", delta: "one change." }),
-      event({ type: "text-end", id: "text-1" }),
-      event({ type: "finish-step" }),
-      event({ type: "finish", finishReason: "stop" }),
+      event({ type: "finish", finishReason: "tool-calls" }),
       "data: [DONE]\n\n",
     ].join("");
     const encoder = new TextEncoder();

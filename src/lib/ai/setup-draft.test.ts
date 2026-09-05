@@ -11,7 +11,7 @@ describe("setup draft tools", () => {
     }, {
       organizationName: "Revised Bank",
       units: [{ id: "group", name: "Group", parentId: null, description: "Top level" }],
-    }, []);
+    }, "I mapped the revised organization.", []);
 
     expect(result.configuration.organizationName).toBe("Revised Bank");
     expect(result.configuration.review).toEqual({
@@ -31,7 +31,7 @@ describe("setup draft tools", () => {
       sources: [],
     }, {
       units: [{ id: "child", name: "Child", parentId: "missing", description: "" }],
-    }, [warning]);
+    }, "I mapped the organization.", [warning]);
 
     expect(result.warnings.filter((item) => item === warning)).toHaveLength(1);
   });

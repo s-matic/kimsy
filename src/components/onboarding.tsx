@@ -292,9 +292,32 @@ interface SetupMessage {
   role: "assistant" | "user";
   text: string;
   artifactStage?: Stage;
+  pendingArtifactStage?: ConfigurationStage;
   sourceNames?: string[];
   warnings?: string[];
   streaming?: boolean;
+}
+
+function SkeletonBar({ className }: { className: string }) {
+  return <div className={`skeleton rounded-full ${className}`} />;
+}
+
+function SetupArtifactSkeleton({ stage }: { stage: ConfigurationStage }) {
+  const definition = setupStages.find((item) => item.stage === stage)!;
+  const Icon = definition.icon;
+  return <div role="status" aria-label={`Building ${definition.label.toLowerCase()}`} data-testid={`setup-artifact-skeleton-${stage}`} className="mt-3 w-full"><Panel className="w-full overflow-hidden border-[#e4e5ea] shadow-[0_10px_36px_rgba(35,36,45,0.05)]">
+    <span className="sr-only">Building the editable {definition.label.toLowerCase()} component.</span>
+    <div aria-hidden="true">
+      <div className="flex items-center gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-3.5 sm:px-5"><div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#f1f2f8] text-[#a1a9d9]"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1 space-y-2"><SkeletonBar className="h-3.5 w-28" /><SkeletonBar className="h-2.5 w-52 max-w-[70%]" /></div><SkeletonBar className="h-6 w-14" /></div>
+      <div className="space-y-4 p-4 sm:p-5">
+        {stage === "ORGANIZATION" && <><div className="space-y-2"><SkeletonBar className="h-2.5 w-28" /><div className="skeleton h-11 rounded-[10px]" /></div><div className="flex items-center justify-between"><div className="space-y-2"><SkeletonBar className="h-2.5 w-32" /><SkeletonBar className="h-2 w-52" /></div><SkeletonBar className="h-8 w-36" /></div><div className="space-y-2 rounded-[12px] border border-[#ececf0] p-3"><div className="skeleton h-14 rounded-[9px]" /><div className="ml-6 skeleton h-14 rounded-[9px]" /><div className="ml-6 skeleton h-14 rounded-[9px]" /></div></>}
+        {stage === "WORKFLOW" && <><div className="skeleton h-20 rounded-[10px]" /><div className="space-y-2"><SkeletonBar className="h-2.5 w-28" /><div className="skeleton h-11 rounded-[10px]" /></div></>}
+        {stage === "SCENARIOS" && <><div className="grid gap-3 sm:grid-cols-[1fr_190px]"><div className="skeleton h-11 rounded-[10px]" /><div className="skeleton h-11 rounded-[10px]" /></div><div className="overflow-hidden rounded-[10px] border border-[#e7e8ec]">{Array.from({ length: 4 }, (_, index) => <div key={index} className="grid grid-cols-[70px_1fr_120px] gap-4 border-b border-[#eeeeF1] px-4 py-4 last:border-b-0"><SkeletonBar className="h-3 w-12" /><SkeletonBar className={`h-3 ${index % 2 ? "w-2/3" : "w-4/5"}`} /><SkeletonBar className="h-3 w-20" /></div>)}</div></>}
+        {stage === "DESIGN" && <><div className="flex items-center justify-between"><div className="space-y-2"><SkeletonBar className="h-2.5 w-32" /><SkeletonBar className="h-2 w-56" /></div><SkeletonBar className="h-8 w-24" /></div><div className="grid gap-3 sm:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <div key={index} className="space-y-3 rounded-[10px] border border-[#e7e8ec] p-4"><SkeletonBar className="h-3 w-2/5" /><SkeletonBar className="h-2.5 w-4/5" /><div className="skeleton h-10 rounded-[8px]" /></div>)}</div></>}
+      </div>
+      <div className="flex items-center justify-between border-t border-[#ededf0] bg-[#fafafd] px-4 py-3.5 sm:px-5"><SkeletonBar className="h-2.5 w-56 max-w-[55%]" /><div className="skeleton h-9 w-32 rounded-[9px]" /></div>
+    </div>
+  </Panel></div>;
 }
 
 const initialMessages: SetupMessage[] = [{
@@ -346,7 +369,7 @@ function SetupArtifact({ stage, configuration, setConfiguration, confirmed, acti
   const definition = stage === "REVIEW" ? { label: "Workspace review", icon: CheckCircle2 } : setupStages.find((item) => item.stage === stage)!;
   const Icon = definition.icon;
   const ready = stageReady(stage, configuration);
-  return <Panel className="mt-3 w-full overflow-hidden border-[#dedfe5] shadow-[0_10px_36px_rgba(35,36,45,0.07)]">
+  return <Panel className="enter-soft mt-3 w-full overflow-hidden border-[#dedfe5] shadow-[0_10px_36px_rgba(35,36,45,0.07)]">
     <div className="flex items-center gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-3.5 sm:px-5"><div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#eff1fb] text-[#586ad0]"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#2c2e38]">{definition.label}</p><p className="mt-0.5 text-[11px] text-[#818491]">Generated from this conversation · edit anything inline</p></div>{confirmed ? <Badge tone="success"><Check className="mr-1 h-3 w-3" />Confirmed</Badge> : <Badge tone="info">Draft</Badge>}</div>
     <div className="p-4 sm:p-5"><StructuredEditor stage={stage} configuration={configuration} setConfiguration={setConfiguration} /></div>
     {stage !== "ORGANIZATION" && stage !== "SCENARIOS" && stage !== "DESIGN" && warnings.length > 0 && <div className="border-t border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-5">{warnings.slice(0, 5).map((warning) => <p key={warning} className="flex items-start gap-2 text-xs leading-5 text-[#735d32]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{warning}</p>)}</div>}
@@ -381,7 +404,7 @@ export function Onboarding() {
     const userMessage: SetupMessage = { id: setupMessageId("user"), role: "user", text: input.text.trim() || "Please review the attached source material.", sourceNames: input.files.map((file) => file.filename || "Attached file") };
     const assistantId = setupMessageId("assistant");
     const submittedStage = activeStage;
-    setMessages((current) => [...current, userMessage, { id: assistantId, role: "assistant", text: "", streaming: true }]);
+    setMessages((current) => [...current, userMessage, { id: assistantId, role: "assistant", text: "", pendingArtifactStage: submittedStage, streaming: true }]);
     setMessage("");
     try {
       const uploadedFiles = await Promise.all(input.files.map(async (file) => {
@@ -411,6 +434,7 @@ export function Onboarding() {
           ...item,
           text: state.text || item.text,
           artifactStage: state.result ? submittedStage : item.artifactStage,
+          pendingArtifactStage: state.result ? undefined : item.pendingArtifactStage,
           sourceNames: state.result ? state.result.sources.map((source) => source.name || "Source material") : item.sourceNames,
           warnings: state.result?.warnings ?? item.warnings,
           streaming: true,
@@ -480,6 +504,7 @@ export function Onboarding() {
               {item.role === "assistant" && <div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5" /></span>Kimsy</div>}
               <MessageContent className={item.role === "assistant" ? "w-full max-w-[760px]" : "max-w-[82%] rounded-[14px] bg-[#f0f1f4] px-4 py-3"}>{item.streaming && !item.text ? <div className="flex items-center gap-2 py-2 text-sm text-[#767987]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#586ad0]" />Structuring your material…</div> : <MessageResponse className="text-[14px] leading-7 text-[#3e414d]">{item.text}</MessageResponse>}</MessageContent>
               {item.sourceNames && item.sourceNames.length > 0 && <div className={`flex flex-wrap gap-1.5 ${item.role === "user" ? "justify-end" : ""}`}>{item.sourceNames.map((name, index) => <span key={`${name}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-[#e0e1e6] bg-white px-2.5 py-1 text-[10px] font-medium text-[#696c79]"><Paperclip className="h-3 w-3" />{name}</span>)}</div>}
+              {item.pendingArtifactStage && !item.artifactStage && <SetupArtifactSkeleton stage={item.pendingArtifactStage} />}
               {item.artifactStage && latestArtifacts.get(item.artifactStage) === item.id && <SetupArtifact stage={item.artifactStage} configuration={configuration} setConfiguration={setConfiguration} confirmed={item.artifactStage !== "REVIEW" && confirmedStages.includes(item.artifactStage)} active={activeStage === item.artifactStage} warnings={item.warnings ?? []} onConfirm={() => confirmStage(item.artifactStage as ConfigurationStage)} onComplete={() => completeOnboarding(configuration)} />}
             </Message>)}
           </ConversationContent>

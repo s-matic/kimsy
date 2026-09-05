@@ -4,6 +4,7 @@ import { sampleConfiguration } from "@/lib/seed";
 
 function proposal(patch: Partial<AssessmentProposalInput["changes"][number]> = {}): AssessmentProposalInput {
   return {
+    assistantMessage: "I prepared one change for review.",
     summary: "Supported update",
     changes: [{
       scenarioId: "scenario-cdd",

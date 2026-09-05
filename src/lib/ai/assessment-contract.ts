@@ -5,6 +5,7 @@ import { sourceDocumentSchema } from "@/lib/ai/setup-contract";
 export const assessmentToolName = "proposeRegisterChanges" as const;
 
 export const assessmentAgentToolResultSchema = z.object({
+  assistantMessage: z.string(),
   summary: z.string(),
   changes: z.array(assessmentRowInputSchema),
   warnings: z.array(z.string()),

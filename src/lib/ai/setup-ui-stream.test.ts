@@ -20,6 +20,7 @@ describe("setup agent UI stream", () => {
   it("delivers a typed tool result and streaming assistant text across arbitrary byte chunks", async () => {
     const result = {
       stage: "ORGANIZATION" as const,
+      assistantMessage: "I mapped your organization.",
       configuration: {
         organizationName: "Example",
         units: [{ id: "example", name: "Example", parentId: null, description: "Top-level unit" }],
@@ -35,16 +36,13 @@ describe("setup agent UI stream", () => {
     const payload = [
       event({ type: "start", messageId: "assistant-1" }),
       event({ type: "start-step" }),
-      event({ type: "tool-input-available", toolCallId: "call-1", toolName: "proposeOrganization", input: {} }),
+      event({ type: "tool-input-start", toolCallId: "call-1", toolName: "proposeOrganization" }),
+      event({ type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: '{"assistantMessage":"I mapped ' }),
+      event({ type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: 'your organization."}' }),
+      event({ type: "tool-input-available", toolCallId: "call-1", toolName: "proposeOrganization", input: { assistantMessage: "I mapped your organization." } }),
       event({ type: "tool-output-available", toolCallId: "call-1", output: result }),
       event({ type: "finish-step" }),
-      event({ type: "start-step" }),
-      event({ type: "text-start", id: "text-1" }),
-      event({ type: "text-delta", id: "text-1", delta: "I mapped " }),
-      event({ type: "text-delta", id: "text-1", delta: "your organization." }),
-      event({ type: "text-end", id: "text-1" }),
-      event({ type: "finish-step" }),
-      event({ type: "finish", finishReason: "stop" }),
+      event({ type: "finish", finishReason: "tool-calls" }),
       "data: [DONE]\n\n",
     ].join("");
     const response = responseFromPieces([
@@ -59,7 +57,6 @@ describe("setup agent UI stream", () => {
       states.push({ text: state.text, hasResult: Boolean(state.result) });
     });
 
-    expect(states.some((state) => state.hasResult && state.text === "")).toBe(true);
     expect(states.some((state) => state.text === "I mapped ")).toBe(true);
     expect(finalState.text).toBe("I mapped your organization.");
     expect(finalState.result).toEqual(result);

@@ -3,6 +3,7 @@ import { assessmentRowInputSchema } from "@/lib/ai/schema";
 import type { WorkspaceConfiguration } from "@/lib/types";
 
 export interface AssessmentProposalInput {
+  assistantMessage: string;
   summary: string;
   changes: Array<z.infer<typeof assessmentRowInputSchema>>;
   warnings: string[];

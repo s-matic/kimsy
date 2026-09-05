@@ -21,6 +21,7 @@ function stageWarnings(stage: SetupStage, configuration: WorkspaceConfiguration)
 export function createSetupDraftResult(
   context: SetupDraftContext,
   patch: Partial<WorkspaceConfiguration>,
+  assistantMessage: string,
   warnings: string[],
 ): SetupAgentToolResult {
   const configuration = workspaceConfigurationSchema.parse({
@@ -34,6 +35,7 @@ export function createSetupDraftResult(
   });
   return {
     stage: context.stage,
+    assistantMessage,
     configuration,
     warnings: [...new Set([...warnings, ...stageWarnings(context.stage, configuration)])],
     sources: context.sources,

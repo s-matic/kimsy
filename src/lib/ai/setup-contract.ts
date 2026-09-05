@@ -29,6 +29,7 @@ export const sourceDocumentSchema = z.object({
 
 export const setupAgentToolResultSchema = z.object({
   stage: onboardingStageSchema,
+  assistantMessage: z.string(),
   configuration: workspaceConfigurationSchema,
   warnings: z.array(z.string()),
   sources: z.array(sourceDocumentSchema),

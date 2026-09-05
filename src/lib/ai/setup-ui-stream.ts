@@ -13,21 +13,31 @@ export interface SetupAgentStreamState {
   result?: SetupAgentToolResult;
 }
 
+function assistantMessage(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const message = (value as Record<string, unknown>).assistantMessage;
+  return typeof message === "string" ? message : "";
+}
+
 function streamState(message: UIMessage): SetupAgentStreamState {
   let result: SetupAgentToolResult | undefined;
+  let toolText = "";
   for (const part of message.parts) {
     if (!isSetupToolPart(part)) continue;
     if ("state" in part && part.state === "output-error") {
       throw new Error(part.errorText || "Kimsy could not create the setup draft.");
     }
+    if ("input" in part) toolText = assistantMessage(part.input) || toolText;
     if ("state" in part && part.state === "output-available") {
       const parsed = setupAgentToolResultSchema.safeParse(part.output);
       if (!parsed.success) throw new Error("Kimsy returned an invalid setup draft.");
       result = parsed.data;
+      toolText = parsed.data.assistantMessage;
     }
   }
+  const responseText = message.parts.filter((part) => part.type === "text").map((part) => part.text).join("");
   return {
-    text: message.parts.filter((part) => part.type === "text").map((part) => part.text).join(""),
+    text: responseText || toolText,
     result,
   };
 }
