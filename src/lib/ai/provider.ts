@@ -22,7 +22,16 @@ export interface AssessInput {
   sources: AiSourceInput;
 }
 
+export type ConfigureStreamEvent =
+  | { type: "assistant-delta"; delta: string }
+  | { type: "result"; result: OnboardingAiOutput };
+
+export interface ConfigureStreamOptions {
+  signal?: AbortSignal;
+}
+
 export interface WorkspaceAiProvider {
   configure(input: ConfigureInput): Promise<OnboardingAiOutput>;
+  configureStream(input: ConfigureInput, options?: ConfigureStreamOptions): AsyncIterable<ConfigureStreamEvent>;
   assess(input: AssessInput): Promise<AssessmentAiOutput>;
 }

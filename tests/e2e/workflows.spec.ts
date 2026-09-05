@@ -13,7 +13,11 @@ test("fresh workspace starts with AI-guided onboarding and can load the sample",
   await page.getByRole("button", { name: "Add unit" }).click();
   await page.getByLabel("Unit name").fill("Compliance");
   await page.getByRole("button", { name: "Confirm organization" }).click();
-  await expect(page.getByText("Who should own assessments")).toBeVisible();
+  await expect(page.getByText("Who should own and complete assessments")).toBeVisible();
+  await page.getByRole("button", { name: "Set up manually" }).click();
+  await expect(page.getByText("Single-owner workspace")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a reviewer" })).toHaveCount(0);
+  await expect(page.getByLabel("Reviewer name")).toHaveCount(0);
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
   await expect(page.getByRole("heading", { name: /Welcome back/ })).toBeVisible();
   await expect(page.getByText("Continue where you left off")).toBeVisible();
@@ -23,7 +27,7 @@ test("AI setup messages appear immediately before the editable proposal", async 
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: true } }));
   await page.route("**/api/ai/configure", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    await route.fulfill({ json: {
+    const result = {
       assistantMessage: "I mapped the organization and reporting line from your description.",
       configuration: {
         organizationName: "Conversation Bank",
@@ -39,7 +43,15 @@ test("AI setup messages appear immediately before the editable proposal", async 
       },
       warnings: [],
       sources: [],
-    } });
+    };
+    await route.fulfill({
+      contentType: "application/x-ndjson; charset=utf-8",
+      body: [
+        JSON.stringify({ type: "assistant-delta", delta: "I mapped the organization" }),
+        JSON.stringify({ type: "assistant-delta", delta: " and reporting line from your description." }),
+        JSON.stringify({ type: "result", result }),
+      ].join("\n") + "\n",
+    });
   });
 
   await page.goto("/");
@@ -53,7 +65,7 @@ test("AI setup messages appear immediately before the editable proposal", async 
   await expect(page.getByLabel("Organization name")).toHaveValue("Conversation Bank");
   await expect(page.getByTestId("org-unit-unit-compliance")).toBeVisible();
   await page.getByRole("button", { name: "Confirm organization" }).click();
-  await expect(page.getByText("Who should own assessments")).toBeVisible();
+  await expect(page.getByText("Who should own and complete assessments")).toBeVisible();
 });
 
 test("sample workspace creates a unit-scoped assessment conversation", async ({ page }) => {
@@ -129,6 +141,11 @@ test("risk scenarios can be searched and expanded for editing", async ({ page })
   await page.getByRole("button", { name: "Expand Transaction monitoring coverage gap" }).click();
   await expect(page.getByLabel("Scenario title")).toHaveValue("Transaction monitoring coverage gap");
   await expect(page.getByText("Description and guidance")).toBeVisible();
+  const categoryInput = page.getByLabel("Scenario category");
+  const categoryListId = await categoryInput.getAttribute("list");
+  expect(categoryListId).toBeTruthy();
+  const categorySuggestions = await page.locator(`#${categoryListId} option`).evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+  expect(categorySuggestions).toEqual(["Customer conduct", "Financial crime", "Regulatory obligations"]);
 });
 
 test("assessment options accept commas and multi-word labels without losing focus", async ({ page }) => {

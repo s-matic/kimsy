@@ -49,6 +49,7 @@ import { validateConfiguration } from "@/lib/scoring";
 import { starterConfiguration } from "@/lib/seed";
 import { useKimsy } from "@/lib/store";
 import { readJsonResponse } from "@/lib/http";
+import { consumeSetupStream } from "@/lib/ai/setup-stream";
 import type { FieldDefinition, FieldType, OrganizationUnit, RiskScenario, WorkspaceConfiguration } from "@/lib/types";
 
 export type Stage = "ORGANIZATION" | "WORKFLOW" | "SCENARIOS" | "DESIGN" | "REVIEW";
@@ -57,7 +58,7 @@ type ConfigurationStage = Exclude<Stage, "REVIEW">;
 
 const setupStages: Array<{ stage: ConfigurationStage; label: string; prompt: string; icon: typeof Building2 }> = [
   { stage: "ORGANIZATION", label: "Organization", prompt: "Start by describing your organization, or upload an org chart, spreadsheet, or image.", icon: Building2 },
-  { stage: "WORKFLOW", label: "Ownership", prompt: "Who should own assessments, and do you need an independent reviewer?", icon: Users },
+  { stage: "WORKFLOW", label: "Ownership", prompt: "Who should own and complete assessments in this workspace?", icon: Users },
   { stage: "SCENARIOS", label: "Risk scenarios", prompt: "Now share the risk scenarios, taxonomy, or policy material you use today.", icon: GitBranch },
   { stage: "DESIGN", label: "Assessment method", prompt: "Finally, describe the fields and scoring method you want assessors to use.", icon: TableProperties },
 ];
@@ -150,14 +151,19 @@ function OrganizationEditor({ configuration, setConfiguration }: EditorProps) {
 
 function WorkflowEditor({ configuration, setConfiguration }: EditorProps) {
   const review = configuration.review;
-  return <div className="space-y-5">
-    <label className="block"><span className="text-xs font-semibold text-[#42504a]">Assessment owner</span><input aria-label="Assessment owner" className={`${inputClass()} mt-2`} value={review.assessorName} onChange={(event) => setConfiguration({ ...configuration, review: { ...review, assessorName: event.target.value } })} placeholder="Your name" /></label>
-    <div className="grid gap-3 sm:grid-cols-2">
-      <button onClick={() => setConfiguration({ ...configuration, review: { ...review, mode: "SOLO", reviewerName: "" } })} className={`rounded-[7px] border p-4 text-left ${review.mode === "SOLO" ? "border-[#0f766e] bg-[#edf7f5]" : "border-[#d7dfdc] hover:border-[#9dbbb5]"}`}><div className="flex items-center justify-between"><p className="text-sm font-semibold">I complete it myself</p>{review.mode === "SOLO" && <Check className="h-4 w-4 text-[#0f766e]" />}</div><p className="mt-2 text-xs leading-5 text-[#65736d]">Keep the workflow fast and mark an assessment complete when you are satisfied.</p></button>
-      <button onClick={() => setConfiguration({ ...configuration, review: { ...review, mode: "REVIEWER" } })} className={`rounded-[7px] border p-4 text-left ${review.mode === "REVIEWER" ? "border-[#0f766e] bg-[#edf7f5]" : "border-[#d7dfdc] hover:border-[#9dbbb5]"}`}><div className="flex items-center justify-between"><p className="text-sm font-semibold">Add a reviewer</p>{review.mode === "REVIEWER" && <Check className="h-4 w-4 text-[#0f766e]" />}</div><p className="mt-2 text-xs leading-5 text-[#65736d]">Submit the finished assessment to one independent person for approval or return.</p></button>
-    </div>
-    {review.mode === "REVIEWER" && <label className="block"><span className="text-xs font-semibold text-[#42504a]">Reviewer name</span><input aria-label="Reviewer name" className={`${inputClass()} mt-2`} value={review.reviewerName} onChange={(event) => setConfiguration({ ...configuration, review: { ...review, reviewerName: event.target.value } })} placeholder="Who provides the independent review?" /></label>}
+  return <div className="space-y-4">
+    <div className="flex items-start gap-3 rounded-[10px] border border-[#dfe2eb] bg-[#f7f8fc] p-4"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-white text-[#586ad0] shadow-sm"><Users className="h-4 w-4" /></div><div><p className="text-sm font-semibold text-[#30323c]">Single-owner workspace</p><p className="mt-1 text-xs leading-5 text-[#707482]">One compliance owner completes and signs off each assessment, keeping the workflow clear and lightweight.</p></div></div>
+    <label className="block"><span className="text-xs font-semibold text-[#42504a]">Assessment owner</span><input aria-label="Assessment owner" className={`${inputClass()} mt-2`} value={review.assessorName} onChange={(event) => setConfiguration({ ...configuration, review: { mode: "SOLO", assessorName: event.target.value, reviewerName: "" } })} placeholder="Your name" /></label>
   </div>;
+}
+
+function uniqueScenarioCategories(scenarios: RiskScenario[]) {
+  const categories = new Map<string, string>();
+  scenarios.forEach((scenario) => {
+    const category = scenario.category.trim();
+    if (category) categories.set(category.toLocaleLowerCase(), category);
+  });
+  return [...categories.values()].sort((left, right) => left.localeCompare(right));
 }
 
 function ScenariosEditor({ configuration, setConfiguration }: EditorProps) {
@@ -165,7 +171,7 @@ function ScenariosEditor({ configuration, setConfiguration }: EditorProps) {
   const [category, setCategory] = useState("ALL");
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const update = (id: string, patch: Partial<RiskScenario>) => setConfiguration({ ...configuration, scenarios: configuration.scenarios.map((scenario) => scenario.id === id ? { ...scenario, ...patch } : scenario) });
-  const categories = [...new Set(configuration.scenarios.map((scenario) => scenario.category.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+  const categories = uniqueScenarioCategories(configuration.scenarios);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleScenarios = configuration.scenarios.filter((scenario) => {
     const matchesCategory = category === "ALL" || scenario.category === category;
@@ -192,8 +198,10 @@ function ScenariosEditor({ configuration, setConfiguration }: EditorProps) {
       <div className="overflow-hidden rounded-[8px] border border-[#dfe3e5] bg-white">
         <div className="hidden grid-cols-[18px_88px_minmax(180px,1.5fr)_minmax(140px,1fr)_70px_36px] gap-3 border-b border-[#e4e6e9] bg-[#f7f7f9] px-3 py-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#818491] sm:grid"><span /><span>Code</span><span>Scenario</span><span>Category</span><span>Sources</span><span /></div>
         <div className="max-h-[520px] overflow-y-auto">
-          {visibleScenarios.map((scenario) => {
+          {visibleScenarios.map((scenario, scenarioIndex) => {
             const expanded = expandedIds.includes(scenario.id);
+            const categoryListId = `scenario-category-suggestions-${scenarioIndex}`;
+            const categorySuggestions = uniqueScenarioCategories(configuration.scenarios.filter((candidate) => candidate.id !== scenario.id));
             return <div key={scenario.id} className="border-b border-[#e9eaed] last:border-b-0">
               <div className="grid grid-cols-[minmax(0,1fr)_40px] items-stretch hover:bg-[#fafafd]">
                 <button type="button" aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${scenario.title || scenario.code || "scenario"}`} onClick={() => toggleExpanded(scenario.id)} className="grid min-w-0 grid-cols-[18px_70px_minmax(0,1fr)] items-center gap-2 px-3 py-3 text-left sm:grid-cols-[18px_88px_minmax(180px,1.5fr)_minmax(140px,1fr)_70px] sm:gap-3">
@@ -206,7 +214,7 @@ function ScenariosEditor({ configuration, setConfiguration }: EditorProps) {
                 <button type="button" aria-label={`Remove ${scenario.title || "scenario"}`} onClick={() => removeScenario(scenario.id)} className="flex items-center justify-center text-[#9a6964] opacity-60 hover:bg-[#fff2f0] hover:opacity-100"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
               {expanded && <div className="border-t border-[#e6e7eb] bg-[#fafafd] p-3 sm:p-4">
-                <div className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)]"><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Code</span><input aria-label="Scenario code" className={inputClass()} value={scenario.code} onChange={(event) => update(scenario.id, { code: event.target.value })} placeholder="Code" /></label><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Scenario</span><input aria-label="Scenario title" className={inputClass()} value={scenario.title} onChange={(event) => update(scenario.id, { title: event.target.value })} placeholder="Scenario title" /></label><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Category</span><input aria-label="Scenario category" className={inputClass()} value={scenario.category} onChange={(event) => update(scenario.id, { category: event.target.value })} placeholder="Category" /></label></div>
+                <div className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)]"><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Code</span><input aria-label="Scenario code" className={inputClass()} value={scenario.code} onChange={(event) => update(scenario.id, { code: event.target.value })} placeholder="Code" /></label><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Scenario</span><input aria-label="Scenario title" className={inputClass()} value={scenario.title} onChange={(event) => update(scenario.id, { title: event.target.value })} placeholder="Scenario title" /></label><label><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Category</span><input aria-label="Scenario category" autoComplete="off" list={categoryListId} className={inputClass()} value={scenario.category} onChange={(event) => update(scenario.id, { category: event.target.value })} placeholder="Category" /><datalist id={categoryListId}>{categorySuggestions.map((item) => <option key={item.toLocaleLowerCase()} value={item} />)}</datalist></label></div>
                 <label className="mt-3 block"><span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-[#858895]">Description and guidance</span><textarea aria-label={`Description for ${scenario.title || "scenario"}`} rows={4} className="w-full resize-y rounded-[6px] border border-[#cfd4d8] bg-white px-3 py-2 text-xs leading-5 outline-none focus:border-[#7785d8] focus:ring-3 focus:ring-[#e9ebfa]" value={scenario.description} onChange={(event) => update(scenario.id, { description: event.target.value })} placeholder="What could happen?" /></label>
                 {scenario.sourceCitations.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{scenario.sourceCitations.map((citation, index) => <span key={`${citation.sourceName}-${index}`} className="rounded bg-[#edf2f0] px-2 py-1 text-[10px] text-[#65736d]">{citation.sourceName} · {citation.locator}</span>)}</div>}
               </div>}
@@ -274,7 +282,7 @@ export function StructuredEditor({ stage, ...props }: EditorProps & { stage: Sta
   if (stage === "DESIGN") return <DesignEditor {...props} />;
   const errors = validateConfiguration(props.configuration);
   return <div className="space-y-4">
-    <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Organization</p><p className="mt-1 text-base font-semibold">{props.configuration.organizationName || "Not set"}</p><p className="mt-1 text-xs text-[#73807b]">{props.configuration.units.length} units</p></div><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Workflow</p><p className="mt-1 text-base font-semibold">{props.configuration.review.mode === "SOLO" ? "Solo assessor" : "Assessor + reviewer"}</p><p className="mt-1 text-xs text-[#73807b]">{props.configuration.review.assessorName}{props.configuration.review.reviewerName ? ` · ${props.configuration.review.reviewerName}` : ""}</p></div><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Risk library</p><p className="mt-1 text-base font-semibold">{props.configuration.scenarios.length} scenarios</p><p className="mt-1 text-xs text-[#73807b]">{new Set(props.configuration.scenarios.map((scenario) => scenario.category)).size} categories</p></div><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Assessment method</p><p className="mt-1 text-base font-semibold">{props.configuration.fields.length} fields</p><p className="mt-1 text-xs text-[#73807b]">{props.configuration.calculations.length} transparent calculations</p></div></div>
+    <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Organization</p><p className="mt-1 text-base font-semibold">{props.configuration.organizationName || "Not set"}</p><p className="mt-1 text-xs text-[#73807b]">{props.configuration.units.length} units</p></div><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Workflow</p><p className="mt-1 text-base font-semibold">Single owner</p><p className="mt-1 text-xs text-[#73807b]">{props.configuration.review.assessorName || "Not assigned"}</p></div><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Risk library</p><p className="mt-1 text-base font-semibold">{props.configuration.scenarios.length} scenarios</p><p className="mt-1 text-xs text-[#73807b]">{new Set(props.configuration.scenarios.map((scenario) => scenario.category)).size} categories</p></div><div className="rounded-[7px] border border-[#dfe5e2] p-4"><p className="text-xs text-[#73807b]">Assessment method</p><p className="mt-1 text-base font-semibold">{props.configuration.fields.length} fields</p><p className="mt-1 text-xs text-[#73807b]">{props.configuration.calculations.length} transparent calculations</p></div></div>
     {errors.length ? <div className="rounded-[7px] border border-[#ebc5c0] bg-[#fff5f3] p-4"><p className="text-xs font-semibold text-[#9b3026]">Resolve these items before creating the workspace</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-[#80504b]">{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : <div className="flex items-center gap-3 rounded-[7px] border border-[#b9decf] bg-[#eff9f4] p-4 text-sm text-[#176b4b]"><CheckCircle2 className="h-5 w-5" />Your workspace is ready to create.</div>}
   </div>;
 }
@@ -286,6 +294,7 @@ interface SetupMessage {
   artifactStage?: Stage;
   sourceNames?: string[];
   warnings?: string[];
+  streaming?: boolean;
 }
 
 const initialMessages: SetupMessage[] = [{
@@ -296,7 +305,7 @@ const initialMessages: SetupMessage[] = [{
 
 const suggestions: Record<ConfigurationStage, string[]> = {
   ORGANIZATION: ["We have a simple three-level organization", "I’ll upload our org chart", "Help me map our legal entities"],
-  WORKFLOW: ["I own the assessments myself", "Add an independent second-line reviewer", "Help me choose the workflow"],
+  WORKFLOW: ["I own the assessments myself", "Use a single assessment owner", "Help me define the owner’s responsibilities"],
   SCENARIOS: ["I’ll upload our current risk library", "Draft scenarios from our business structure", "Keep our existing risk terminology"],
   DESIGN: ["We use likelihood × impact", "Include control effectiveness", "Recreate our current risk matrix"],
 };
@@ -307,7 +316,7 @@ function setupMessageId(prefix: string) {
 
 function stageReady(stage: Stage, configuration: WorkspaceConfiguration) {
   if (stage === "ORGANIZATION") return Boolean(configuration.organizationName.trim() && configuration.units.length);
-  if (stage === "WORKFLOW") return Boolean(configuration.review.assessorName.trim() && (configuration.review.mode === "SOLO" || configuration.review.reviewerName.trim()));
+  if (stage === "WORKFLOW") return Boolean(configuration.review.assessorName.trim());
   if (stage === "SCENARIOS") return configuration.scenarios.length > 0;
   if (stage === "DESIGN") return configuration.fields.length > 0 && configuration.calculations.length > 0;
   return validateConfiguration(configuration).length === 0;
@@ -370,7 +379,9 @@ export function Onboarding() {
     setLoading(true);
     setError("");
     const userMessage: SetupMessage = { id: setupMessageId("user"), role: "user", text: input.text.trim() || "Please review the attached source material.", sourceNames: input.files.map((file) => file.filename || "Attached file") };
-    setMessages((current) => [...current, userMessage]);
+    const assistantId = setupMessageId("assistant");
+    const submittedStage = activeStage;
+    setMessages((current) => [...current, userMessage, { id: assistantId, role: "assistant", text: "", streaming: true }]);
     setMessage("");
     try {
       const uploadedFiles = await Promise.all(input.files.map(async (file) => {
@@ -386,20 +397,31 @@ export function Onboarding() {
       form.append("conversation", [...messages, userMessage].map((item) => `${item.role === "assistant" ? "Kimsy" : "User"}: ${item.text}`).join("\n"));
       uploadedFiles.forEach((file) => form.append("files", file));
       const response = await fetch("/api/ai/configure", { method: "POST", body: form });
-      const result = await readJsonResponse(response);
-      if (!response.ok) throw new Error(String(result.error ?? "Kimsy could not interpret that material."));
-      const sources = Array.isArray(result.sources) ? result.sources as Array<{ name?: unknown }> : [];
-      const assistant: SetupMessage = {
-        id: setupMessageId("assistant"),
-        role: "assistant",
-        text: String(result.assistantMessage || "I’ve turned that into a structured proposal for you to review."),
-        artifactStage: activeStage,
-        sourceNames: sources.map((source) => String(source.name || "Source material")),
-        warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : [],
-      };
-      setConfiguration(result.configuration as WorkspaceConfiguration);
-      setMessages((current) => [...current, assistant]);
+      if (!response.ok) {
+        const result = await readJsonResponse(response);
+        throw new Error(String(result.error ?? "Kimsy could not interpret that material."));
+      }
+      let receivedResult = false;
+      await consumeSetupStream(response, (event) => {
+        if (event.type === "assistant-delta") {
+          setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, text: `${item.text}${event.delta}` } : item));
+          return;
+        }
+        const result = event.result;
+        receivedResult = true;
+        setConfiguration(result.configuration);
+        setMessages((current) => current.map((item) => item.id === assistantId ? {
+          ...item,
+          text: result.assistantMessage || "I’ve turned that into a structured proposal for you to review.",
+          artifactStage: submittedStage,
+          sourceNames: result.sources.map((source) => source.name || "Source material"),
+          warnings: result.warnings,
+          streaming: false,
+        } : item));
+      });
+      if (!receivedResult) throw new Error("Kimsy’s response ended before the setup proposal was ready.");
     } catch (caught) {
+      setMessages((current) => current.filter((item) => item.id !== assistantId));
       setError(caught instanceof Error ? caught.message : "Kimsy could not interpret that material.");
       throw caught;
     } finally {
@@ -419,6 +441,9 @@ export function Onboarding() {
 
   const confirmStage = (stage: ConfigurationStage) => {
     if (!stageReady(stage, configuration)) return;
+    if (stage === "WORKFLOW" && (configuration.review.mode !== "SOLO" || configuration.review.reviewerName)) {
+      setConfiguration({ ...configuration, review: { ...configuration.review, mode: "SOLO", reviewerName: "" } });
+    }
     const index = setupStages.findIndex((item) => item.stage === stage);
     const next = setupStages[index + 1];
     setConfirmedStages((current) => current.includes(stage) ? current : [...current, stage]);
@@ -451,11 +476,10 @@ export function Onboarding() {
           <ConversationContent className="mx-auto w-full max-w-[900px] gap-6 px-4 py-7 sm:px-6 sm:py-9">
             {messages.map((item) => <Message from={item.role} key={item.id} className="max-w-full">
               {item.role === "assistant" && <div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5" /></span>Kimsy</div>}
-              <MessageContent className={item.role === "assistant" ? "w-full max-w-[760px]" : "max-w-[82%] rounded-[14px] bg-[#f0f1f4] px-4 py-3"}><MessageResponse className="text-[14px] leading-7 text-[#3e414d]">{item.text}</MessageResponse></MessageContent>
+              <MessageContent className={item.role === "assistant" ? "w-full max-w-[760px]" : "max-w-[82%] rounded-[14px] bg-[#f0f1f4] px-4 py-3"}>{item.streaming && !item.text ? <div className="flex items-center gap-2 py-2 text-sm text-[#767987]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#586ad0]" />Structuring your material…</div> : <MessageResponse className="text-[14px] leading-7 text-[#3e414d]">{item.text}</MessageResponse>}</MessageContent>
               {item.sourceNames && item.sourceNames.length > 0 && <div className={`flex flex-wrap gap-1.5 ${item.role === "user" ? "justify-end" : ""}`}>{item.sourceNames.map((name, index) => <span key={`${name}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-[#e0e1e6] bg-white px-2.5 py-1 text-[10px] font-medium text-[#696c79]"><Paperclip className="h-3 w-3" />{name}</span>)}</div>}
               {item.artifactStage && latestArtifacts.get(item.artifactStage) === item.id && <SetupArtifact stage={item.artifactStage} configuration={configuration} setConfiguration={setConfiguration} confirmed={item.artifactStage !== "REVIEW" && confirmedStages.includes(item.artifactStage)} active={activeStage === item.artifactStage} warnings={item.warnings ?? []} onConfirm={() => confirmStage(item.artifactStage as ConfigurationStage)} onComplete={() => completeOnboarding(configuration)} />}
             </Message>)}
-            {loading && <Message from="assistant"><div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5 animate-pulse" /></span>Kimsy</div><MessageContent><div className="flex items-center gap-2 py-2 text-sm text-[#767987]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#586ad0]" />Structuring your material…</div></MessageContent></Message>}
           </ConversationContent>
           <ConversationScrollButton className="bottom-3" />
         </Conversation>
