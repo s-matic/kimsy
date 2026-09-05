@@ -49,7 +49,7 @@ import { validateConfiguration } from "@/lib/scoring";
 import { starterConfiguration } from "@/lib/seed";
 import { useKimsy } from "@/lib/store";
 import { readJsonResponse } from "@/lib/http";
-import { consumeSetupStream } from "@/lib/ai/setup-stream";
+import { consumeSetupAgentStream } from "@/lib/ai/setup-ui-stream";
 import type { FieldDefinition, FieldType, OrganizationUnit, RiskScenario, WorkspaceConfiguration } from "@/lib/types";
 
 export type Stage = "ORGANIZATION" | "WORKFLOW" | "SCENARIOS" | "DESIGN" | "REVIEW";
@@ -402,24 +402,26 @@ export function Onboarding() {
         throw new Error(String(result.error ?? "Kimsy could not interpret that material."));
       }
       let receivedResult = false;
-      await consumeSetupStream(response, (event) => {
-        if (event.type === "assistant-delta") {
-          setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, text: `${item.text}${event.delta}` } : item));
-          return;
+      const finalState = await consumeSetupAgentStream(response, (state) => {
+        if (state.result) {
+          receivedResult = true;
+          setConfiguration(state.result.configuration);
         }
-        const result = event.result;
-        receivedResult = true;
-        setConfiguration(result.configuration);
         setMessages((current) => current.map((item) => item.id === assistantId ? {
           ...item,
-          text: result.assistantMessage || "I’ve turned that into a structured proposal for you to review.",
-          artifactStage: submittedStage,
-          sourceNames: result.sources.map((source) => source.name || "Source material"),
-          warnings: result.warnings,
-          streaming: false,
+          text: state.text || item.text,
+          artifactStage: state.result ? submittedStage : item.artifactStage,
+          sourceNames: state.result ? state.result.sources.map((source) => source.name || "Source material") : item.sourceNames,
+          warnings: state.result?.warnings ?? item.warnings,
+          streaming: true,
         } : item));
       });
-      if (!receivedResult) throw new Error("Kimsy’s response ended before the setup proposal was ready.");
+      if (!receivedResult || !finalState.result) throw new Error("Kimsy’s response ended before the setup proposal was ready.");
+      setMessages((current) => current.map((item) => item.id === assistantId ? {
+        ...item,
+        text: finalState.text || "I’ve turned that into a structured proposal for you to review.",
+        streaming: false,
+      } : item));
     } catch (caught) {
       setMessages((current) => current.filter((item) => item.id !== assistantId));
       setError(caught instanceof Error ? caught.message : "Kimsy could not interpret that material.");

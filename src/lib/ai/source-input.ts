@@ -1,7 +1,6 @@
 import "server-only";
-import type { ResponseInputContent } from "openai/resources/responses/responses";
 import { extractFrameworkSource } from "@/lib/framework-import";
-import type { AiSourceInput } from "@/lib/ai/provider";
+import type { AiImageInput, AiSourceInput } from "@/lib/ai/source-types";
 import type { SourceDocument } from "@/lib/types";
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -33,7 +32,7 @@ export async function prepareAiInput(formData: FormData): Promise<{
   if (totalSize > MAX_TOTAL_SIZE) throw new Error("Attachments must be 60 MB or smaller in total.");
 
   const textParts: string[] = [];
-  const images: ResponseInputContent[] = [];
+  const images: AiImageInput[] = [];
   const sources: SourceDocument[] = [];
 
   for (const [index, file] of files.entries()) {
@@ -42,9 +41,9 @@ export async function prepareAiInput(formData: FormData): Promise<{
       const mediaType = imageMediaType(file);
       const bytes = Buffer.from(await file.arrayBuffer());
       images.push({
-        type: "input_image",
-        detail: "auto",
-        image_url: `data:${mediaType};base64,${bytes.toString("base64")}`,
+        data: bytes.toString("base64"),
+        mediaType,
+        filename: file.name,
       });
       textParts.push(`IMAGE SOURCE: ${file.name}\n[image 1] Visual source attached after this text.`);
       sources.push({

@@ -81,12 +81,6 @@ export const workspaceConfigurationSchema = z.object({
 
 export const onboardingStageSchema = z.enum(["ORGANIZATION", "WORKFLOW", "SCENARIOS", "DESIGN"]);
 
-export const onboardingAiOutputSchema = z.object({
-  assistantMessage: z.string(),
-  configuration: workspaceConfigurationSchema,
-  warnings: z.array(z.string()),
-});
-
 export const assessmentRowInputSchema = z.object({
   scenarioId: z.string(),
   applicable: z.boolean(),
@@ -94,13 +88,3 @@ export const assessmentRowInputSchema = z.object({
   rationale: z.string(),
   citations: z.array(sourceCitationSchema),
 });
-
-export const assessmentAiOutputSchema = z.object({
-  assistantMessage: z.string(),
-  summary: z.string(),
-  changes: z.array(assessmentRowInputSchema),
-  warnings: z.array(z.string()),
-});
-
-export type OnboardingAiOutput = z.infer<typeof onboardingAiOutputSchema>;
-export type AssessmentAiOutput = z.infer<typeof assessmentAiOutputSchema>;

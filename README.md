@@ -16,15 +16,17 @@ Open `http://localhost:3000`.
 
 `OPENAI_API_KEY` is required for AI onboarding and assessment conversations. It remains server-side. Without a key, the complete sample workspace can still be explored from the first screen.
 
+The AI runtime uses the Vercel AI SDK with separate setup and assessment agents. Provider selection and model IDs are isolated in `src/lib/ai/models.ts`; `OPENAI_MODEL` is the shared default, while `AI_SETUP_MODEL` and `AI_ASSESSMENT_MODEL` can override it per agent. The current installed provider adapter is OpenAI.
+
 ## Included local-first slice
 
-- Conversational onboarding with text and multi-file input
+- Tool-driven Setup Agent with streaming text and inline editable drafts
 - PDF, DOCX, XLSX, CSV, PNG, JPEG, and WebP sources
 - Editable organization hierarchy and customer risk-scenario library
 - Typed custom assessment fields
 - Transparent chained matrix and weighted-threshold calculations
 - One assessment conversation per organizational unit and period
-- AI register proposals that require explicit human application
+- Separate Assessment Agent whose register proposals require explicit human application
 - Spreadsheet-style risk register with inline editing
 - Optional whole-assessment reviewer mode
 - Browser persistence using versioned local storage

@@ -24,10 +24,11 @@ import {
 import { displayFieldValue, FieldControl, RatingValue } from "@/components/field-control";
 import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { consumeAssessmentAgentStream } from "@/lib/ai/assessment-ui-stream";
 import { explainCalculation } from "@/lib/scoring";
 import { useKimsy } from "@/lib/store";
 import { readJsonResponse } from "@/lib/http";
-import type { Assessment, AssessmentStatus, RegisterChangeProposal, SourceDocument } from "@/lib/types";
+import type { Assessment, AssessmentStatus, ConversationMessage, RegisterChangeProposal } from "@/lib/types";
 
 function statusBadge(status: AssessmentStatus) {
   if (status === "APPROVED" || status === "COMPLETED") return <Badge tone="success">{status === "APPROVED" ? "Approved" : "Complete"}</Badge>;
@@ -49,6 +50,10 @@ function isPresent(value: unknown) {
 function assessmentReady(assessment: Assessment, requiredFieldIds: string[]) {
   const applicable = assessment.rows.filter((row) => row.applicable);
   return applicable.length > 0 && applicable.every((row) => requiredFieldIds.every((fieldId) => isPresent(row.values[fieldId])));
+}
+
+function AssessmentChatMessage({ role, text, sourceNames, createdAt, streaming = false }: Pick<ConversationMessage, "role" | "text" | "sourceNames" | "createdAt"> & { streaming?: boolean }) {
+  return <div className={`flex gap-2.5 ${role === "USER" ? "flex-row-reverse" : ""}`}><div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${role === "USER" ? "bg-[#d6b56f] text-[#342b19]" : "bg-[#dff3ef] text-[#0f766e]"}`}>{role === "USER" ? <UserRound className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}</div><div className={`max-w-[82%] rounded-[8px] px-3 py-2.5 ${role === "USER" ? "bg-[#23322d] text-white" : "bg-[#edf4f1] text-[#364b44]"}`}><p className="text-xs leading-5">{text || (streaming ? "Reviewing the assessment…" : "")}</p>{sourceNames?.length ? <div className="mt-2 flex flex-wrap gap-1">{sourceNames.map((name) => <span key={name} className="rounded bg-white/10 px-1.5 py-0.5 text-[9px]">{name}</span>)}</div> : null}<p className={`mt-1.5 text-[9px] ${role === "USER" ? "text-white/55" : "text-[#82908a]"}`}>{createdAt}</p></div></div>;
 }
 
 export default function AssessmentWorkspacePage() {
@@ -74,6 +79,11 @@ export default function AssessmentWorkspacePage() {
   const [deselectedChanges, setDeselectedChanges] = useState<string[]>([]);
   const [reviewComment, setReviewComment] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [streamingExchange, setStreamingExchange] = useState<{
+    userText: string;
+    sourceNames: string[];
+    assistantText: string;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   if (!assessment) return <Panel><EmptyState icon={<MessageSquareText className="h-5 w-5" />} title="Assessment not found" description="Return to assessments and choose an available workspace." /></Panel>;
@@ -88,30 +98,54 @@ export default function AssessmentWorkspacePage() {
 
   const send = async () => {
     if (!message.trim() && !files.length) return;
+    const submittedMessage = message.trim();
+    const submittedFiles = [...files];
     setLoading(true);
     setError("");
+    setStreamingExchange({
+      userText: submittedMessage || "Review the attached material.",
+      sourceNames: submittedFiles.map((file) => file.name),
+      assistantText: "",
+    });
+    setMessage("");
     try {
       const form = new FormData();
-      form.append("message", message);
+      form.append("message", submittedMessage);
       form.append("configuration", JSON.stringify(state.configuration));
       form.append("assessment", JSON.stringify(assessment));
-      files.forEach((file) => form.append("files", file));
+      submittedFiles.forEach((file) => form.append("files", file));
       const response = await fetch("/api/ai/workspace", { method: "POST", body: form });
-      const result = await readJsonResponse(response);
-      if (!response.ok) throw new Error(String(result.error ?? "Kimsy could not assess that material."));
+      if (!response.ok) {
+        const result = await readJsonResponse(response);
+        throw new Error(String(result.error ?? "Kimsy could not assess that material."));
+      }
+      let receivedResult = false;
+      const finalState = await consumeAssessmentAgentStream(response, (streamState) => {
+        if (streamState.result) receivedResult = true;
+        setStreamingExchange((current) => current ? { ...current, assistantText: streamState.text || current.assistantText } : current);
+      });
+      if (!receivedResult || !finalState.result) throw new Error("Kimsy’s response ended before the register proposal was ready.");
       const proposal: RegisterChangeProposal = {
         id: `proposal-${assessment.id}-${assessment.messages.length}`,
-        summary: String(result.summary),
-        changes: result.changes as RegisterChangeProposal["changes"],
-        warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : [],
+        summary: finalState.result.summary,
+        changes: finalState.result.changes,
+        warnings: finalState.result.warnings,
         createdAt: "Just now",
       };
-      recordAiProposal({ assessmentId: assessment.id, userText: message, assistantText: String(result.assistantMessage), proposal, sources: result.sources as SourceDocument[] });
+      recordAiProposal({
+        assessmentId: assessment.id,
+        userText: submittedMessage,
+        assistantText: finalState.text || "I’ve prepared register changes for you to review before applying them.",
+        proposal,
+        sources: finalState.result.sources,
+      });
+      setStreamingExchange(null);
       setDeselectedChanges([]);
-      setMessage("");
       setFiles([]);
       if (fileRef.current) fileRef.current.value = "";
     } catch (caught) {
+      setStreamingExchange(null);
+      setMessage(submittedMessage);
       setError(caught instanceof Error ? caught.message : "Kimsy could not assess that material.");
     } finally {
       setLoading(false);
@@ -133,7 +167,8 @@ export default function AssessmentWorkspacePage() {
         <Panel className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 shadow-none">
         <PanelHeader title="Assessment assistant" description="Your notes and source material stay with this assessment" action={<div className="mr-8"><Badge tone="info"><Sparkles className="mr-1 h-3 w-3" />AI assisted</Badge></div>} />
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {assessment.messages.map((item) => <div key={item.id} className={`flex gap-2.5 ${item.role === "USER" ? "flex-row-reverse" : ""}`}><div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${item.role === "USER" ? "bg-[#d6b56f] text-[#342b19]" : "bg-[#dff3ef] text-[#0f766e]"}`}>{item.role === "USER" ? <UserRound className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}</div><div className={`max-w-[82%] rounded-[8px] px-3 py-2.5 ${item.role === "USER" ? "bg-[#23322d] text-white" : "bg-[#edf4f1] text-[#364b44]"}`}><p className="text-xs leading-5">{item.text}</p>{item.sourceNames?.length ? <div className="mt-2 flex flex-wrap gap-1">{item.sourceNames.map((name) => <span key={name} className="rounded bg-white/10 px-1.5 py-0.5 text-[9px]">{name}</span>)}</div> : null}<p className={`mt-1.5 text-[9px] ${item.role === "USER" ? "text-white/55" : "text-[#82908a]"}`}>{item.createdAt}</p></div></div>)}
+          {assessment.messages.map((item) => <AssessmentChatMessage key={item.id} {...item} />)}
+          {streamingExchange && <><AssessmentChatMessage role="USER" text={streamingExchange.userText} sourceNames={streamingExchange.sourceNames} createdAt="Just now" /><AssessmentChatMessage role="ASSISTANT" text={streamingExchange.assistantText} createdAt="Just now" streaming /></>}
         </div>
         {assessment.sources.length > 0 && <div className="border-t border-[#e2e7e5] bg-[#fbfcfc] px-4 py-3"><div className="flex items-center gap-2 text-[10px] font-bold uppercase text-[#75817c]"><Paperclip className="h-3 w-3" />Sources used</div><div className="mt-2 flex flex-wrap gap-1.5">{assessment.sources.map((source) => <span key={source.id} title={`${source.locators.length} source locators`} className="inline-flex items-center gap-1 rounded-[4px] border border-[#dce2df] bg-white px-2 py-1 text-[10px] text-[#5e6c66]"><FileText className="h-3 w-3" />{source.name} · {formatBytes(source.size)}</span>)}</div></div>}
         {editable ? <div className="border-t border-[#e2e7e5] p-4"><textarea aria-label="Message Kimsy" rows={3} value={message} onChange={(event) => setMessage(event.target.value)} className="w-full resize-none rounded-[7px] border border-[#cfd8d4] px-3 py-2.5 text-sm leading-6 placeholder:text-[#929d98] focus:border-[#0f766e] focus:outline-none" placeholder="Tell Kimsy what changed, or ask it to review a file…" />{files.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{files.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex items-center gap-1 rounded bg-[#edf2f0] px-2 py-1 text-[10px]">{file.name}<button aria-label={`Remove ${file.name}`} onClick={() => setFiles(files.filter((_, fileIndex) => fileIndex !== index))}><X className="h-3 w-3" /></button></span>)}</div>}{error && <div className="mt-2 flex items-start gap-2 rounded-[6px] border border-[#efc0bb] bg-[#fff4f2] px-3 py-2 text-xs leading-5 text-[#96352b]">{error.includes("OPENAI_API_KEY") && <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />}{error}</div>}<div className="mt-3 flex items-center justify-between"><input ref={fileRef} type="file" multiple accept=".pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} /><Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}><FileUp className="h-3.5 w-3.5" />Attach</Button><Button size="sm" loading={loading} disabled={!message.trim() && !files.length} onClick={send}>{loading ? "Thinking" : "Send"}{!loading && <Send className="h-3.5 w-3.5" />}</Button></div></div> : <div className="border-t border-[#e2e7e5] bg-[#f8faf9] px-4 py-3 text-xs leading-5 text-[#6d7a75]">{state.persona === "REVIEWER" ? "Reviewer mode is read-only." : "This assessment is read-only in its current state."}</div>}

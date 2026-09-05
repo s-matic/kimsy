@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+function uiStreamEvent(value: object) {
+  return `data: ${JSON.stringify(value)}\n\n`;
+}
+
 test("fresh workspace starts with AI-guided onboarding and can load the sample", async ({ page }) => {
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: false } }));
   await page.goto("/");
@@ -28,7 +32,7 @@ test("AI setup messages appear immediately before the editable proposal", async 
   await page.route("**/api/ai/configure", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const result = {
-      assistantMessage: "I mapped the organization and reporting line from your description.",
+      stage: "ORGANIZATION",
       configuration: {
         organizationName: "Conversation Bank",
         units: [
@@ -45,12 +49,23 @@ test("AI setup messages appear immediately before the editable proposal", async 
       sources: [],
     };
     await route.fulfill({
-      contentType: "application/x-ndjson; charset=utf-8",
+      contentType: "text/event-stream; charset=utf-8",
+      headers: { "x-vercel-ai-ui-message-stream": "v1" },
       body: [
-        JSON.stringify({ type: "assistant-delta", delta: "I mapped the organization" }),
-        JSON.stringify({ type: "assistant-delta", delta: " and reporting line from your description." }),
-        JSON.stringify({ type: "result", result }),
-      ].join("\n") + "\n",
+        uiStreamEvent({ type: "start", messageId: "assistant-setup" }),
+        uiStreamEvent({ type: "start-step" }),
+        uiStreamEvent({ type: "tool-input-available", toolCallId: "setup-call", toolName: "proposeOrganization", input: {} }),
+        uiStreamEvent({ type: "tool-output-available", toolCallId: "setup-call", output: result }),
+        uiStreamEvent({ type: "finish-step" }),
+        uiStreamEvent({ type: "start-step" }),
+        uiStreamEvent({ type: "text-start", id: "setup-text" }),
+        uiStreamEvent({ type: "text-delta", id: "setup-text", delta: "I mapped the organization" }),
+        uiStreamEvent({ type: "text-delta", id: "setup-text", delta: " and reporting line from your description." }),
+        uiStreamEvent({ type: "text-end", id: "setup-text" }),
+        uiStreamEvent({ type: "finish-step" }),
+        uiStreamEvent({ type: "finish", finishReason: "stop" }),
+        "data: [DONE]\n\n",
+      ].join(""),
     });
   });
 
@@ -98,6 +113,55 @@ test("assessment form stays primary and the assistant opens in a dialog", async 
   await expect(assistant.getByLabel("Message Kimsy")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(assistant).toBeHidden();
+});
+
+test("assessment agent streams its reply before showing a reviewable proposal", async ({ page }) => {
+  await page.route("**/api/ai/workspace", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const result = {
+      summary: "Updated likelihood based on the new operational context.",
+      changes: [{
+        scenarioId: "scenario-cdd",
+        applicable: true,
+        values: [{ fieldId: "likelihood", value: "possible" }],
+        rationale: "The supplied update supports a possible likelihood.",
+        citations: [],
+      }],
+      warnings: [],
+      sources: [],
+    };
+    await route.fulfill({
+      contentType: "text/event-stream; charset=utf-8",
+      headers: { "x-vercel-ai-ui-message-stream": "v1" },
+      body: [
+        uiStreamEvent({ type: "start", messageId: "assistant-assessment" }),
+        uiStreamEvent({ type: "start-step" }),
+        uiStreamEvent({ type: "tool-input-available", toolCallId: "assessment-call", toolName: "proposeRegisterChanges", input: {} }),
+        uiStreamEvent({ type: "tool-output-available", toolCallId: "assessment-call", output: result }),
+        uiStreamEvent({ type: "finish-step" }),
+        uiStreamEvent({ type: "start-step" }),
+        uiStreamEvent({ type: "text-start", id: "assessment-text" }),
+        uiStreamEvent({ type: "text-delta", id: "assessment-text", delta: "I prepared one " }),
+        uiStreamEvent({ type: "text-delta", id: "assessment-text", delta: "change for review." }),
+        uiStreamEvent({ type: "text-end", id: "assessment-text" }),
+        uiStreamEvent({ type: "finish-step" }),
+        uiStreamEvent({ type: "finish", finishReason: "stop" }),
+        "data: [DONE]\n\n",
+      ].join(""),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.getByRole("link", { name: "Open conversation" }).click();
+  await page.getByRole("button", { name: "Open assistant" }).click();
+  const assistant = page.getByRole("dialog", { name: "Assessment assistant" });
+  await assistant.getByLabel("Message Kimsy").fill("Likelihood may have changed.");
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(assistant.getByText("Likelihood may have changed.")).toBeVisible();
+  await expect(assistant.getByText("Reviewing the assessment…")).toBeVisible();
+  await expect(assistant.getByText("I prepared one change for review.")).toBeVisible();
+  await expect(page.getByText("Proposed register changes")).toBeVisible();
 });
 
 test("organization setup can switch between hierarchy and editable details", async ({ page }) => {

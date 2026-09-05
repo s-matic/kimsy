@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.59",
     "@base-ui/react": "^1.7.0",
     "@e965/xlsx": "^0.20.3",
     "@streamdown/cjk": "^1.0.3",
@@ -29,7 +30,6 @@
     "mammoth": "^1.12.1",
     "nanoid": "^6.0.1",
     "next": "16.3.0",
-    "openai": "^7.4.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "react": "19.2.8",
