@@ -17,7 +17,7 @@ test("fresh workspace starts with AI-guided onboarding and can load the sample",
   await page.getByRole("button", { name: "Add unit" }).click();
   await page.getByLabel("Unit name").fill("Compliance");
   await page.getByRole("button", { name: "Confirm organization" }).click();
-  await expect(page.getByText("Who should own and complete assessments")).toBeVisible();
+  await expect(page.getByTestId("setup-conversation").getByText("Who should own and complete assessments")).toBeVisible();
   await page.getByRole("button", { name: "Set up manually" }).click();
   await expect(page.getByText("Single-owner workspace")).toBeVisible();
   await expect(page.getByRole("button", { name: "Add a reviewer" })).toHaveCount(0);
@@ -27,10 +27,47 @@ test("fresh workspace starts with AI-guided onboarding and can load the sample",
   await expect(page.getByText("Continue where you left off")).toBeVisible();
 });
 
-test("AI setup messages appear immediately before the editable proposal", async ({ page }) => {
+test("vague setup messages ask for clarification without updating the workspace", async ({ page }) => {
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: true } }));
   await page.route("**/api/ai/configure", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
+    const clarification = {
+      stage: "ORGANIZATION",
+      assistantMessage: "What is your organization called, and which teams or reporting units should I include?",
+      missingInformation: ["Organization name", "Organizational units"],
+    };
+    await route.fulfill({
+      contentType: "text/event-stream; charset=utf-8",
+      headers: { "x-vercel-ai-ui-message-stream": "v1" },
+      body: [
+        uiStreamEvent({ type: "start", messageId: "assistant-clarification" }),
+        uiStreamEvent({ type: "start-step" }),
+        uiStreamEvent({ type: "tool-input-start", toolCallId: "clarification-call", toolName: "askClarification" }),
+        uiStreamEvent({ type: "tool-input-available", toolCallId: "clarification-call", toolName: "askClarification", input: { assistantMessage: clarification.assistantMessage, missingInformation: clarification.missingInformation } }),
+        uiStreamEvent({ type: "tool-output-available", toolCallId: "clarification-call", output: clarification }),
+        uiStreamEvent({ type: "finish-step" }),
+        uiStreamEvent({ type: "finish", finishReason: "tool-calls" }),
+        "data: [DONE]\n\n",
+      ].join(""),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Message Kimsy").fill("hi");
+  await page.getByRole("button", { name: "Submit" }).click();
+  await expect(page.getByText("hi", { exact: true })).toBeVisible();
+  await expect(page.getByText("Thinking…")).toBeVisible();
+  await expect(page.getByTestId("setup-artifact-skeleton-ORGANIZATION")).toHaveCount(0);
+  await expect(page.getByText("What is your organization called")).toBeVisible();
+  await expect(page.getByTestId("setup-change-summary")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Undo last AI update" })).toHaveCount(0);
+  await expect(page.getByTestId("setup-workspace").getByLabel("Organization name")).toHaveCount(0);
+});
+
+test("AI setup streams into a persistent workspace draft", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: true } }));
+  await page.route("**/api/ai/configure", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 900));
     const result = {
       stage: "ORGANIZATION",
       assistantMessage: "I mapped the organization and reporting line from your description.",
@@ -73,14 +110,29 @@ test("AI setup messages appear immediately before the editable proposal", async 
   await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByText("We have a business team with compliance as second line.")).toBeVisible();
   await expect(prompt).toHaveValue("");
-  await expect(page.getByText("Structuring your material…")).toBeVisible();
-  await expect(page.getByTestId("setup-artifact-skeleton-ORGANIZATION")).toBeVisible();
-  await expect(page.getByText("I mapped the organization and reporting line")).toBeVisible();
+  await expect(page.getByText("Thinking…")).toBeVisible();
+  const workspaceTab = page.getByRole("tab", { name: /Workspace draft/ });
+  if (await workspaceTab.isVisible()) await workspaceTab.click();
   await expect(page.getByTestId("setup-artifact-skeleton-ORGANIZATION")).toHaveCount(0);
-  await expect(page.getByLabel("Organization name")).toHaveValue("Conversation Bank");
+  const conversationTab = page.getByRole("tab", { name: "Conversation" });
+  if (await conversationTab.isVisible()) await conversationTab.click();
+  await expect(page.getByText("I mapped the organization and reporting line")).toBeVisible();
+  await expect(page.getByTestId("setup-change-summary").getByText("2 units added")).toBeVisible();
+  await expect(page.getByTestId("setup-conversation").getByLabel("Organization name")).toHaveCount(0);
+  await page.getByRole("button", { name: "View update" }).click();
+  const workspace = page.getByTestId("setup-workspace");
+  await expect(workspace.getByLabel("Organization name")).toHaveValue("Conversation Bank");
+  const undo = workspace.getByRole("button", { name: "Undo last AI update" });
+  await expect(undo).toBeVisible();
   await expect(page.getByTestId("org-unit-unit-compliance")).toBeVisible();
+  await undo.click();
+  await expect(workspace.getByLabel("Organization name")).toHaveValue("");
+  await expect(undo).toHaveCount(0);
+  await workspace.getByLabel("Organization name").fill("Conversation Bank");
+  await workspace.getByRole("button", { name: "Add unit" }).click();
+  await workspace.getByLabel("Unit name").fill("Business");
   await page.getByRole("button", { name: "Confirm organization" }).click();
-  await expect(page.getByText("Who should own and complete assessments")).toBeVisible();
+  await expect(page.getByTestId("setup-conversation").getByText("Who should own and complete assessments")).toBeVisible();
 });
 
 test("sample workspace creates a unit-scoped assessment conversation", async ({ page }) => {

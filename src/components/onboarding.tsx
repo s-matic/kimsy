@@ -9,10 +9,14 @@ import {
   ChevronDown,
   ChevronRight,
   GitBranch,
+  History,
   KeyRound,
+  MessageSquareText,
   Network,
+  PanelRight,
   Paperclip,
   Plus,
+  RotateCcw,
   Rows3,
   Search,
   Sparkles,
@@ -292,10 +296,20 @@ interface SetupMessage {
   role: "assistant" | "user";
   text: string;
   artifactStage?: Stage;
-  pendingArtifactStage?: ConfigurationStage;
+  changeSummary?: string;
+  revisionId?: string;
   sourceNames?: string[];
-  warnings?: string[];
   streaming?: boolean;
+}
+
+interface WorkspaceRevision {
+  id: string;
+  stage: ConfigurationStage;
+  summary: string;
+  before: WorkspaceConfiguration;
+  beforeWarnings: string[];
+  createdAt: string;
+  undone: boolean;
 }
 
 function SkeletonBar({ className }: { className: string }) {
@@ -305,7 +319,7 @@ function SkeletonBar({ className }: { className: string }) {
 function SetupArtifactSkeleton({ stage }: { stage: ConfigurationStage }) {
   const definition = setupStages.find((item) => item.stage === stage)!;
   const Icon = definition.icon;
-  return <div role="status" aria-label={`Building ${definition.label.toLowerCase()}`} data-testid={`setup-artifact-skeleton-${stage}`} className="mt-3 w-full"><Panel className="w-full overflow-hidden border-[#e4e5ea] shadow-[0_10px_36px_rgba(35,36,45,0.05)]">
+  return <div role="status" aria-label={`Building ${definition.label.toLowerCase()}`} data-testid={`setup-artifact-skeleton-${stage}`} className="w-full"><Panel className="w-full overflow-hidden border-[#e4e5ea] shadow-[0_10px_36px_rgba(35,36,45,0.05)]">
     <span className="sr-only">Building the editable {definition.label.toLowerCase()} component.</span>
     <div aria-hidden="true">
       <div className="flex items-center gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-3.5 sm:px-5"><div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#f1f2f8] text-[#a1a9d9]"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1 space-y-2"><SkeletonBar className="h-3.5 w-28" /><SkeletonBar className="h-2.5 w-52 max-w-[70%]" /></div><SkeletonBar className="h-6 w-14" /></div>
@@ -345,6 +359,44 @@ function stageReady(stage: Stage, configuration: WorkspaceConfiguration) {
   return validateConfiguration(configuration).length === 0;
 }
 
+function collectionChanges<T extends { id: string }>(before: T[], after: T[]) {
+  const previous = new Map(before.map((item) => [item.id, item]));
+  const next = new Map(after.map((item) => [item.id, item]));
+  const added = after.filter((item) => !previous.has(item.id)).length;
+  const removed = before.filter((item) => !next.has(item.id)).length;
+  const changed = after.filter((item) => previous.has(item.id) && JSON.stringify(previous.get(item.id)) !== JSON.stringify(item)).length;
+  return { added, removed, changed };
+}
+
+function configurationChangeSummary(stage: ConfigurationStage, before: WorkspaceConfiguration, after: WorkspaceConfiguration) {
+  if (stage === "WORKFLOW") return before.review.assessorName === after.review.assessorName
+    ? "Ownership draft refreshed"
+    : `Assessment owner set to ${after.review.assessorName || "an unnamed owner"}`;
+  const change = stage === "ORGANIZATION"
+    ? collectionChanges(before.units, after.units)
+    : stage === "SCENARIOS"
+      ? collectionChanges(before.scenarios, after.scenarios)
+      : collectionChanges(before.fields, after.fields);
+  const nouns = stage === "ORGANIZATION" ? "units" : stage === "SCENARIOS" ? "scenarios" : "fields";
+  const details = [
+    change.added ? `${change.added} ${nouns} added` : "",
+    change.changed ? `${change.changed} changed` : "",
+    change.removed ? `${change.removed} removed` : "",
+  ].filter(Boolean);
+  if (stage === "DESIGN" && before.calculations.length !== after.calculations.length) {
+    details.push(`${after.calculations.length} calculations configured`);
+  }
+  return details.join(" · ") || `${setupStages.find((item) => item.stage === stage)?.label} draft refreshed`;
+}
+
+function configurationsEqual(before: WorkspaceConfiguration, after: WorkspaceConfiguration) {
+  return JSON.stringify(before) === JSON.stringify(after);
+}
+
+function workspaceTimestamp() {
+  return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date());
+}
+
 function PromptAttachments({ loading, aiConfigured, message }: { loading: boolean; aiConfigured: boolean | null; message: string }) {
   const attachments = usePromptInputAttachments();
   return <>
@@ -369,7 +421,7 @@ function SetupArtifact({ stage, configuration, setConfiguration, confirmed, acti
   const definition = stage === "REVIEW" ? { label: "Workspace review", icon: CheckCircle2 } : setupStages.find((item) => item.stage === stage)!;
   const Icon = definition.icon;
   const ready = stageReady(stage, configuration);
-  return <Panel className="enter-soft mt-3 w-full overflow-hidden border-[#dedfe5] shadow-[0_10px_36px_rgba(35,36,45,0.07)]">
+  return <Panel className="enter-soft w-full overflow-hidden border-[#dedfe5] shadow-[0_10px_36px_rgba(35,36,45,0.07)]">
     <div className="flex items-center gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-3.5 sm:px-5"><div className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#eff1fb] text-[#586ad0]"><Icon className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#2c2e38]">{definition.label}</p><p className="mt-0.5 text-[11px] text-[#818491]">Generated from this conversation · edit anything inline</p></div>{confirmed ? <Badge tone="success"><Check className="mr-1 h-3 w-3" />Confirmed</Badge> : <Badge tone="info">Draft</Badge>}</div>
     <div className="p-4 sm:p-5"><StructuredEditor stage={stage} configuration={configuration} setConfiguration={setConfiguration} /></div>
     {stage !== "ORGANIZATION" && stage !== "SCENARIOS" && stage !== "DESIGN" && warnings.length > 0 && <div className="border-t border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-5">{warnings.slice(0, 5).map((warning) => <p key={warning} className="flex items-start gap-2 text-xs leading-5 text-[#735d32]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{warning}</p>)}</div>}
@@ -382,7 +434,16 @@ export function Onboarding() {
   const [configuration, setConfiguration] = useState<WorkspaceConfiguration>(() => clone(starterConfiguration));
   const [messages, setMessages] = useState<SetupMessage[]>(initialMessages);
   const [activeStage, setActiveStage] = useState<Stage>("ORGANIZATION");
+  const [workspaceStage, setWorkspaceStage] = useState<Stage>("ORGANIZATION");
+  const [mobileSurface, setMobileSurface] = useState<"CONVERSATION" | "WORKSPACE">("CONVERSATION");
   const [confirmedStages, setConfirmedStages] = useState<ConfigurationStage[]>([]);
+  const [pendingStage, setPendingStage] = useState<ConfigurationStage | null>(null);
+  const [workspaceUpdated, setWorkspaceUpdated] = useState(false);
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
+  const [workspaceWarnings, setWorkspaceWarnings] = useState<Partial<Record<ConfigurationStage, string[]>>>({});
+  const [revisions, setRevisions] = useState<WorkspaceRevision[]>([]);
+  const [undoRevisionId, setUndoRevisionId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -396,6 +457,26 @@ export function Onboarding() {
   messages.forEach((item) => { if (item.artifactStage) latestArtifacts.set(item.artifactStage, item.id); });
   const activeDefinition = activeStage === "REVIEW" ? null : setupStages.find((item) => item.stage === activeStage)!;
   const progressIndex = activeStage === "REVIEW" ? setupStages.length : setupStages.findIndex((item) => item.stage === activeStage);
+  const workspaceDefinition = workspaceStage === "REVIEW"
+    ? { label: "Workspace review", prompt: "Review the complete workspace before creating it.", icon: CheckCircle2 }
+    : setupStages.find((item) => item.stage === workspaceStage)!;
+  const workspaceHasDraft = latestArtifacts.has(workspaceStage);
+  const workspaceIsPending = pendingStage === workspaceStage;
+  const visibleWorkspaceStages: Stage[] = [
+    ...setupStages.filter((item) => latestArtifacts.has(item.stage) || pendingStage === item.stage || activeStage === item.stage || confirmedStages.includes(item.stage)).map((item) => item.stage),
+    ...(activeStage === "REVIEW" || latestArtifacts.has("REVIEW") ? ["REVIEW" as const] : []),
+  ];
+
+  const editConfiguration = (nextConfiguration: WorkspaceConfiguration) => {
+    setConfiguration(nextConfiguration);
+    setUndoRevisionId(null);
+  };
+
+  const openWorkspace = (stage: Stage) => {
+    setWorkspaceStage(stage);
+    setMobileSurface("WORKSPACE");
+    setWorkspaceUpdated(false);
+  };
 
   const sendToKimsy = async (input: PromptInputMessage) => {
     if (activeStage === "REVIEW" || (!input.text.trim() && input.files.length === 0)) return;
@@ -404,7 +485,14 @@ export function Onboarding() {
     const userMessage: SetupMessage = { id: setupMessageId("user"), role: "user", text: input.text.trim() || "Please review the attached source material.", sourceNames: input.files.map((file) => file.filename || "Attached file") };
     const assistantId = setupMessageId("assistant");
     const submittedStage = activeStage;
-    setMessages((current) => [...current, userMessage, { id: assistantId, role: "assistant", text: "", pendingArtifactStage: submittedStage, streaming: true }]);
+    const submittedConfiguration = clone(configuration);
+    const submittedWarnings = workspaceWarnings[submittedStage] ?? [];
+    const previousUndoRevisionId = undoRevisionId;
+    let receivedOutcome = false;
+    let handledToolResult = false;
+    let startedUpdate = false;
+    let didApplyResult = false;
+    setMessages((current) => [...current, userMessage, { id: assistantId, role: "assistant", text: "", streaming: true }]);
     setMessage("");
     try {
       const uploadedFiles = await Promise.all(input.files.map(async (file) => {
@@ -424,30 +512,76 @@ export function Onboarding() {
         const result = await readJsonResponse(response);
         throw new Error(String(result.error ?? "Kimsy could not interpret that material."));
       }
-      let receivedResult = false;
+      let resultRevisionId = "";
+      let resultSummary = "";
       const finalState = await consumeSetupAgentStream(response, (state) => {
-        if (state.result) {
-          receivedResult = true;
-          setConfiguration(state.result.configuration);
+        if (state.mode === "update" && !startedUpdate) {
+          startedUpdate = true;
+          setPendingStage(submittedStage);
+          setWorkspaceStage(submittedStage);
+          setWorkspaceUpdated(false);
+          setUndoRevisionId(null);
         }
+        if (state.mode === "clarification") {
+          setPendingStage(null);
+        }
+        if (state.clarification) receivedOutcome = true;
+        if (state.result && !handledToolResult) {
+          handledToolResult = true;
+          receivedOutcome = true;
+          setPendingStage(null);
+          if (configurationsEqual(submittedConfiguration, state.result.configuration)) {
+            setUndoRevisionId(previousUndoRevisionId);
+          } else {
+            didApplyResult = true;
+            resultRevisionId = setupMessageId("revision");
+            resultSummary = configurationChangeSummary(submittedStage, submittedConfiguration, state.result.configuration);
+            setConfiguration(state.result.configuration);
+            setWorkspaceWarnings((current) => ({ ...current, [submittedStage]: state.result?.warnings ?? [] }));
+            setRevisions((current) => [{
+              id: resultRevisionId,
+              stage: submittedStage,
+              summary: resultSummary,
+              before: submittedConfiguration,
+              beforeWarnings: submittedWarnings,
+              createdAt: workspaceTimestamp(),
+              undone: false,
+            }, ...current].slice(0, 12));
+            setUndoRevisionId(resultRevisionId);
+            setWorkspaceVersion((current) => current + 1);
+            setWorkspaceUpdated(true);
+          }
+        }
+        const appliedUpdate = Boolean(state.result && didApplyResult);
         setMessages((current) => current.map((item) => item.id === assistantId ? {
           ...item,
           text: state.text || item.text,
-          artifactStage: state.result ? submittedStage : item.artifactStage,
-          pendingArtifactStage: state.result ? undefined : item.pendingArtifactStage,
-          sourceNames: state.result ? state.result.sources.map((source) => source.name || "Source material") : item.sourceNames,
-          warnings: state.result?.warnings ?? item.warnings,
+          artifactStage: appliedUpdate ? submittedStage : item.artifactStage,
+          changeSummary: appliedUpdate ? resultSummary : item.changeSummary,
+          revisionId: appliedUpdate ? resultRevisionId : item.revisionId,
+          sourceNames: appliedUpdate && state.result ? state.result.sources.map((source) => source.name || "Source material") : item.sourceNames,
           streaming: true,
         } : item));
       });
-      if (!receivedResult || !finalState.result) throw new Error("Kimsy’s response ended before the setup proposal was ready.");
+      if (!receivedOutcome || (!finalState.result && !finalState.clarification)) throw new Error("Kimsy’s response ended before the setup response was ready.");
       setMessages((current) => current.map((item) => item.id === assistantId ? {
         ...item,
-        text: finalState.text || "I’ve turned that into a structured proposal for you to review.",
+        text: finalState.text || (finalState.clarification ? "What information would you like to use for this setup step?" : "I’ve turned that into a structured proposal for you to review."),
         streaming: false,
       } : item));
     } catch (caught) {
+      if (receivedOutcome) {
+        setPendingStage(null);
+        setMessages((current) => current.map((item) => item.id === assistantId ? {
+          ...item,
+          text: item.text || (didApplyResult ? "I’ve updated the workspace draft for you to review." : "What would you like to add to this setup step?"),
+          streaming: false,
+        } : item));
+        return;
+      }
       setMessages((current) => current.filter((item) => item.id !== assistantId));
+      setPendingStage(null);
+      setUndoRevisionId(previousUndoRevisionId);
       setError(caught instanceof Error ? caught.message : "Kimsy could not interpret that material.");
       throw caught;
     } finally {
@@ -460,13 +594,34 @@ export function Onboarding() {
     setMessages((current) => [...current, {
       id: setupMessageId("manual"),
       role: "assistant",
-      text: "Of course. Start with the editable structure below, and tell me whenever you want help refining it.",
+      text: "Of course. I’ve opened an editable draft in the workspace. Tell me whenever you want help refining it.",
       artifactStage: activeStage,
+    }]);
+    openWorkspace(activeStage);
+  };
+
+  const undoRevision = (revisionId: string) => {
+    const revision = revisions.find((item) => item.id === revisionId);
+    if (!revision || revisionId !== undoRevisionId || revision.undone) return;
+    setConfiguration(clone(revision.before));
+    setWorkspaceWarnings((current) => ({ ...current, [revision.stage]: revision.beforeWarnings }));
+    setRevisions((current) => current.map((item) => item.id === revisionId ? { ...item, undone: true } : item));
+    setUndoRevisionId(null);
+    setWorkspaceStage(revision.stage);
+    setWorkspaceVersion((current) => current + 1);
+    setWorkspaceUpdated(true);
+    setMessages((current) => [...current, {
+      id: setupMessageId("undo"),
+      role: "assistant",
+      text: `I restored the ${setupStages.find((item) => item.stage === revision.stage)?.label.toLowerCase()} draft to its previous version.`,
+      artifactStage: revision.stage,
+      changeSummary: `Undid: ${revision.summary}`,
     }]);
   };
 
   const confirmStage = (stage: ConfigurationStage) => {
     if (!stageReady(stage, configuration)) return;
+    setUndoRevisionId(null);
     if (stage === "WORKFLOW" && (configuration.review.mode !== "SOLO" || configuration.review.reviewerName)) {
       setConfiguration({ ...configuration, review: { ...configuration.review, mode: "SOLO", reviewerName: "" } });
     }
@@ -475,15 +630,19 @@ export function Onboarding() {
     setConfirmedStages((current) => current.includes(stage) ? current : [...current, stage]);
     if (next) {
       setActiveStage(next.stage);
+      setWorkspaceStage(next.stage);
+      setMobileSurface("CONVERSATION");
       setMessages((current) => [...current,
         { id: setupMessageId("confirmed"), role: "user", text: `${setupStages[index].label} looks right. Let’s continue.` },
         { id: setupMessageId("question"), role: "assistant", text: next.prompt },
       ]);
     } else {
       setActiveStage("REVIEW");
+      setWorkspaceStage("REVIEW");
+      setMobileSurface("WORKSPACE");
       setMessages((current) => [...current,
         { id: setupMessageId("confirmed"), role: "user", text: "The assessment method looks right." },
-        { id: setupMessageId("review"), role: "assistant", text: "That gives us a complete first version. Review the workspace summary below, make any last edits, and create it when you’re ready.", artifactStage: "REVIEW" },
+        { id: setupMessageId("review"), role: "assistant", text: "That gives us a complete first version. I’ve opened the workspace review for your final checks.", artifactStage: "REVIEW" },
       ]);
     }
     setMessage("");
@@ -492,26 +651,55 @@ export function Onboarding() {
 
   return <div className="flex min-h-screen flex-col bg-[#f5f5f7]">
     <header className="shrink-0"><div className="mx-auto flex h-[72px] max-w-[1180px] items-center px-4 sm:px-6"><BrandMark className="h-7 w-7" /><p className="font-display ml-2 text-[26px] leading-none text-[#20212a]">Kimsy</p><div className="ml-auto flex items-center gap-3"><p className="hidden text-xs text-[#858895] sm:block">Setup stays private to this browser</p><button onClick={loadSample} className="rounded-full border border-[#dedfe5] bg-white px-4 py-2 text-xs font-semibold text-[#4e5261] shadow-sm hover:bg-[#f9f9fb]">Explore sample workspace</button></div></div></header>
-    <main className="mx-auto flex w-full max-w-[1080px] flex-1 min-h-0 px-3 pb-3 sm:px-6 sm:pb-6">
-      <section className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-[22px] border border-[#e2e3e8] bg-white shadow-[var(--shadow-panel)]" aria-label="Workspace setup conversation">
+    <main className="mx-auto flex w-full max-w-[1480px] min-h-0 flex-1 px-3 pb-3 sm:px-6 sm:pb-6">
+      <section className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-[22px] border border-[#e2e3e8] bg-white shadow-[var(--shadow-panel)] lg:h-[calc(100vh-96px)] lg:min-h-0 lg:max-h-[920px]" aria-label="Workspace setup conversation">
         <div className="flex shrink-0 flex-col gap-3 border-b border-[#ededf0] bg-[#fcfcfd] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#727687]">Workspace setup</p><h1 className="font-display mt-1 text-[27px] text-[#25262f]">Build it with Kimsy</h1></div><div className="flex items-center gap-1.5">{setupStages.map((item, index) => <div key={item.stage} title={item.label} className={`h-2 rounded-full transition-all ${index < progressIndex ? "w-5 bg-[#586ad0]" : index === progressIndex ? "w-8 bg-[#586ad0]" : "w-5 bg-[#dedfe5]"}`} />)}<span className="ml-2 text-[11px] font-medium text-[#777a88]">{activeStage === "REVIEW" ? "Ready to review" : `${progressIndex + 1} of ${setupStages.length} · ${activeDefinition?.label}`}</span></div></div>
 
         {aiConfigured === false && <div className="flex shrink-0 items-start gap-3 border-b border-[#ead5a5] bg-[#fffaf0] px-4 py-3 sm:px-6"><KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-[#8a6417]" /><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-[#765514]">AI setup needs an API key</p><p className="mt-1 text-xs leading-5 text-[#7c6a45]">Add <code className="rounded bg-white px-1 py-0.5">OPENAI_API_KEY</code> to <code className="rounded bg-white px-1 py-0.5">.env.local</code> and restart. You can still complete every section manually.</p></div><button onClick={revealManualEditor} className="shrink-0 text-xs font-semibold text-[#765514] underline underline-offset-2">Set up manually</button></div>}
 
-        <Conversation className="min-h-0 flex-1">
-          <ConversationContent className="mx-auto w-full max-w-[900px] gap-6 px-4 py-7 sm:px-6 sm:py-9">
-            {messages.map((item) => <Message from={item.role} key={item.id} className="max-w-full">
-              {item.role === "assistant" && <div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5" /></span>Kimsy</div>}
-              <MessageContent className={item.role === "assistant" ? "w-full max-w-[760px]" : "max-w-[82%] rounded-[14px] bg-[#f0f1f4] px-4 py-3"}>{item.streaming && !item.text ? <div className="flex items-center gap-2 py-2 text-sm text-[#767987]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#586ad0]" />Structuring your material…</div> : <MessageResponse className="text-[14px] leading-7 text-[#3e414d]">{item.text}</MessageResponse>}</MessageContent>
-              {item.sourceNames && item.sourceNames.length > 0 && <div className={`flex flex-wrap gap-1.5 ${item.role === "user" ? "justify-end" : ""}`}>{item.sourceNames.map((name, index) => <span key={`${name}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-[#e0e1e6] bg-white px-2.5 py-1 text-[10px] font-medium text-[#696c79]"><Paperclip className="h-3 w-3" />{name}</span>)}</div>}
-              {item.pendingArtifactStage && !item.artifactStage && <SetupArtifactSkeleton stage={item.pendingArtifactStage} />}
-              {item.artifactStage && latestArtifacts.get(item.artifactStage) === item.id && <SetupArtifact stage={item.artifactStage} configuration={configuration} setConfiguration={setConfiguration} confirmed={item.artifactStage !== "REVIEW" && confirmedStages.includes(item.artifactStage)} active={activeStage === item.artifactStage} warnings={item.warnings ?? []} onConfirm={() => confirmStage(item.artifactStage as ConfigurationStage)} onComplete={() => completeOnboarding(configuration)} />}
-            </Message>)}
-          </ConversationContent>
-          <ConversationScrollButton className="bottom-3" />
-        </Conversation>
+        <div className="grid shrink-0 grid-cols-2 border-b border-[#ededf0] bg-[#fcfcfd] p-1 lg:hidden" role="tablist" aria-label="Setup views">
+          <button role="tab" aria-selected={mobileSurface === "CONVERSATION"} onClick={() => setMobileSurface("CONVERSATION")} className={`flex h-9 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold ${mobileSurface === "CONVERSATION" ? "bg-white text-[#30323c] shadow-sm" : "text-[#777b88]"}`}><MessageSquareText className="h-3.5 w-3.5" />Conversation</button>
+          <button role="tab" aria-selected={mobileSurface === "WORKSPACE"} onClick={() => openWorkspace(workspaceStage)} className={`relative flex h-9 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold ${mobileSurface === "WORKSPACE" ? "bg-white text-[#30323c] shadow-sm" : "text-[#777b88]"}`}><PanelRight className="h-3.5 w-3.5" />Workspace draft{(workspaceUpdated || pendingStage) && <span className={`h-1.5 w-1.5 rounded-full bg-[#586ad0] ${pendingStage ? "animate-pulse" : ""}`} />}</button>
+        </div>
 
-        {activeStage !== "REVIEW" ? <div className="shrink-0 border-t border-[#ededf0] bg-[#fcfcfd] px-3 py-3 sm:px-5 sm:py-4"><div className="mx-auto max-w-[860px]">{!latestArtifacts.has(activeStage) && <div className="mb-3 flex items-center gap-2"><Suggestions>{suggestions[activeStage].map((suggestion) => <Suggestion key={suggestion} suggestion={suggestion} onClick={setMessage} className="h-8 border-[#e2e3e8] bg-white px-3 text-[11px] text-[#646775] shadow-sm hover:bg-[#f5f5f8]" />)}</Suggestions><button onClick={revealManualEditor} className="hidden shrink-0 text-[11px] font-semibold text-[#586ad0] sm:block">Enter manually</button></div>}<PromptInput onSubmit={sendToKimsy} onError={(inputError) => setError(inputError.message)} accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,image/*" multiple maxFiles={8} maxFileSize={15 * 1024 * 1024} className="rounded-[16px] bg-white shadow-[0_8px_28px_rgba(35,36,45,0.08)]"><PromptInputTextarea aria-label="Message Kimsy" value={message} onChange={(event) => setMessage(event.target.value)} disabled={loading} placeholder={activeDefinition?.prompt} className="min-h-[72px] px-4 pt-3 text-sm leading-6" /><PromptAttachments loading={loading} aiConfigured={aiConfigured} message={message} /></PromptInput>{error && <p className="mt-2 flex items-start gap-2 px-1 text-xs leading-5 text-[#9d3328]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</p>}</div></div> : <div className="shrink-0 border-t border-[#ededf0] bg-[#fcfcfd] px-5 py-3 text-center text-xs text-[#7b7e8c]">Review the inline components above. Nothing is saved until you create the workspace.</div>}
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[410px_minmax(0,1fr)]">
+          <div data-testid="setup-conversation" className={`${mobileSurface === "CONVERSATION" ? "flex" : "hidden"} min-h-0 flex-col bg-white lg:flex lg:border-r lg:border-[#ededf0]`}>
+            <Conversation className="min-h-0 flex-1">
+              <ConversationContent className="w-full gap-5 px-4 py-6 sm:px-5">
+                {messages.map((item) => {
+                  const revision = item.revisionId ? revisions.find((candidate) => candidate.id === item.revisionId) : undefined;
+                  return <Message from={item.role} key={item.id} className="max-w-full">
+                    {item.role === "assistant" && <div className="flex items-center gap-2 text-[11px] font-semibold text-[#666a79]"><span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-[#eff1fb] text-[#586ad0]"><Sparkles className="h-3.5 w-3.5" /></span>Kimsy</div>}
+                    <MessageContent className={item.role === "assistant" ? "w-full" : "max-w-[88%] rounded-[14px] bg-[#f0f1f4] px-4 py-3"}>{item.streaming && !item.text ? <div className="flex items-center gap-2 py-2 text-sm text-[#767987]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#586ad0]" />Thinking…</div> : <MessageResponse className="text-[13px] leading-6 text-[#3e414d]">{item.text}</MessageResponse>}</MessageContent>
+                    {item.sourceNames && item.sourceNames.length > 0 && <div className={`flex flex-wrap gap-1.5 ${item.role === "user" ? "justify-end" : ""}`}>{item.sourceNames.map((name, index) => <span key={`${name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded-full border border-[#e0e1e6] bg-white px-2.5 py-1 text-[10px] font-medium text-[#696c79]"><Paperclip className="h-3 w-3 shrink-0" /><span className="truncate">{name}</span></span>)}</div>}
+                    {item.changeSummary && item.artifactStage && <div className="w-full rounded-[11px] border border-[#dfe2ed] bg-[#f7f8fc] p-3" data-testid="setup-change-summary"><div className="flex items-start gap-2.5"><div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-white text-[#586ad0] shadow-sm"><PanelRight className="h-3.5 w-3.5" /></div><div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#858998]">Workspace updated</p><p className="mt-1 text-xs font-semibold text-[#393c47]">{item.changeSummary}</p><div className="mt-2 flex flex-wrap items-center gap-3"><button type="button" onClick={() => openWorkspace(item.artifactStage!)} className="text-[11px] font-semibold text-[#586ad0]">View update</button>{item.revisionId === undoRevisionId && !revision?.undone && <button type="button" onClick={() => undoRevision(item.revisionId!)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#696d7b]"><RotateCcw className="h-3 w-3" />Undo</button>}{revision?.undone && <span className="text-[10px] font-medium text-[#858895]">Undone</span>}</div></div></div></div>}
+                  </Message>;
+                })}
+              </ConversationContent>
+              <ConversationScrollButton className="bottom-3" />
+            </Conversation>
+
+            {activeStage !== "REVIEW" ? <div className="shrink-0 border-t border-[#ededf0] bg-[#fcfcfd] px-3 py-3"><div>{!latestArtifacts.has(activeStage) && <div className="mb-3 flex items-center gap-2"><Suggestions>{suggestions[activeStage].map((suggestion) => <Suggestion key={suggestion} suggestion={suggestion} onClick={setMessage} className="h-8 border-[#e2e3e8] bg-white px-3 text-[11px] text-[#646775] shadow-sm hover:bg-[#f5f5f8]" />)}</Suggestions><button onClick={revealManualEditor} className="shrink-0 text-[11px] font-semibold text-[#586ad0]">Enter manually</button></div>}<PromptInput onSubmit={sendToKimsy} onError={(inputError) => setError(inputError.message)} accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,image/*" multiple maxFiles={8} maxFileSize={15 * 1024 * 1024} className="rounded-[16px] bg-white shadow-[0_8px_28px_rgba(35,36,45,0.08)]"><PromptInputTextarea aria-label="Message Kimsy" value={message} onChange={(event) => setMessage(event.target.value)} disabled={loading} placeholder={activeDefinition?.prompt} className="min-h-[72px] px-4 pt-3 text-sm leading-6" /><PromptAttachments loading={loading} aiConfigured={aiConfigured} message={message} /></PromptInput>{error && <p className="mt-2 flex items-start gap-2 px-1 text-xs leading-5 text-[#9d3328]"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</p>}</div></div> : <div className="shrink-0 border-t border-[#ededf0] bg-[#fcfcfd] px-5 py-3 text-center text-xs text-[#7b7e8c]">Your setup conversation remains available until you create the workspace.</div>}
+          </div>
+
+          <aside data-testid="setup-workspace" className={`${mobileSurface === "WORKSPACE" ? "flex" : "hidden"} min-h-0 flex-col bg-[#f7f7f9] lg:flex`} aria-label="Workspace draft">
+            <div className="shrink-0 border-b border-[#e2e3e8] bg-white px-4 py-3.5 sm:px-5">
+              <div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><p className="text-xs font-semibold text-[#30323c]">Workspace draft</p>{workspaceIsPending && <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[#586ad0]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#586ad0]" />Updating</span>}</div><p className="mt-0.5 truncate text-[10px] text-[#838693]">{workspaceDefinition.label} · changes are not saved yet</p></div><div className="flex shrink-0 items-center gap-1.5">{undoRevisionId && <button type="button" aria-label="Undo last AI update" onClick={() => undoRevision(undoRevisionId)} className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#e0e1e6] bg-white px-2.5 text-[11px] font-semibold text-[#666a78] hover:bg-[#f7f7f9]"><RotateCcw className="h-3.5 w-3.5" /><span className="hidden sm:inline">Undo</span></button>}<button type="button" aria-expanded={showHistory} onClick={() => setShowHistory((current) => !current)} className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#e0e1e6] bg-white px-2.5 text-[11px] font-semibold text-[#666a78] hover:bg-[#f7f7f9]"><History className="h-3.5 w-3.5" />History{revisions.length > 0 && <span className="rounded-full bg-[#eff1fb] px-1.5 py-0.5 text-[9px] text-[#586ad0]">{revisions.length}</span>}</button></div></div>
+              <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5">{visibleWorkspaceStages.map((stage) => {
+                const definition = stage === "REVIEW" ? { label: "Review", icon: CheckCircle2 } : setupStages.find((item) => item.stage === stage)!;
+                const Icon = definition.icon;
+                return <button key={stage} type="button" onClick={() => openWorkspace(stage)} className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] px-2.5 text-[10px] font-semibold transition-colors ${workspaceStage === stage ? "bg-[#292a33] text-white" : "border border-[#e0e1e6] bg-white text-[#6f7280] hover:bg-[#f7f7f9]"}`}><Icon className="h-3 w-3" />{definition.label}{stage !== "REVIEW" && confirmedStages.includes(stage) && <Check className="h-3 w-3" />}</button>;
+              })}</div>
+            </div>
+
+            {showHistory && <div className="max-h-48 shrink-0 overflow-y-auto border-b border-[#e2e3e8] bg-[#fcfcfd] px-4 py-3 sm:px-5"><p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[#858895]">AI revision history</p>{revisions.length === 0 ? <p className="mt-2 text-xs text-[#7a7e8b]">AI updates will appear here.</p> : <div className="mt-2 space-y-2">{revisions.slice(0, 8).map((revision) => <div key={revision.id} className="flex items-start gap-2 rounded-[8px] border border-[#e6e7eb] bg-white px-3 py-2"><button type="button" onClick={() => openWorkspace(revision.stage)} className="min-w-0 flex-1 text-left"><p className="truncate text-[11px] font-semibold text-[#40434e]">{revision.summary}</p><p className="mt-0.5 text-[9px] text-[#888b97]">{setupStages.find((item) => item.stage === revision.stage)?.label} · {revision.createdAt}{revision.undone ? " · Undone" : ""}</p></button>{revision.id === undoRevisionId && !revision.undone && <button type="button" aria-label="Undo last AI update" onClick={() => undoRevision(revision.id)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-[#676b78] hover:bg-[#f0f1f5]"><RotateCcw className="h-3.5 w-3.5" /></button>}</div>)}</div>}</div>}
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+              {pendingStage && workspaceHasDraft && <div role="status" className="mb-3 flex items-center gap-2 rounded-[10px] border border-[#dfe2ef] bg-[#f0f2fb] px-3 py-2.5 text-xs font-medium text-[#5966b3]"><Sparkles className="h-3.5 w-3.5 animate-pulse" />Kimsy is updating the workspace…</div>}
+              {workspaceIsPending && !workspaceHasDraft ? <SetupArtifactSkeleton stage={workspaceStage as ConfigurationStage} /> : workspaceHasDraft ? <div key={`${workspaceStage}-${workspaceVersion}`} className={pendingStage ? "pointer-events-none opacity-60" : ""}><SetupArtifact stage={workspaceStage} configuration={configuration} setConfiguration={editConfiguration} confirmed={workspaceStage !== "REVIEW" && confirmedStages.includes(workspaceStage)} active={activeStage === workspaceStage} warnings={workspaceStage === "REVIEW" ? [] : workspaceWarnings[workspaceStage] ?? []} onConfirm={() => confirmStage(workspaceStage as ConfigurationStage)} onComplete={() => completeOnboarding(configuration)} /></div> : <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center px-6 py-14 text-center"><div className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#e1e2e8] bg-white text-[#737fca] shadow-sm"><workspaceDefinition.icon className="h-5 w-5" /></div><p className="mt-4 text-sm font-semibold text-[#343640]">{workspaceDefinition.label} will appear here</p><p className="mt-2 text-xs leading-5 text-[#797d89]">{workspaceDefinition.prompt}</p>{activeStage !== "REVIEW" && workspaceStage === activeStage && <button type="button" onClick={revealManualEditor} className="mt-4 rounded-[9px] border border-[#dcdee5] bg-white px-3.5 py-2 text-xs font-semibold text-[#586ad0] shadow-sm hover:bg-[#fafafd]">Start manually</button>}</div>}
+            </div>
+          </aside>
+        </div>
       </section>
     </main>
   </div>;

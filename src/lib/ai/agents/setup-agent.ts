@@ -22,6 +22,16 @@ interface SetupPromptInput extends SetupAgentContext {
 
 export function createSetupAgent(context: SetupAgentContext) {
   const tools = {
+    askClarification: tool({
+      description: "Ask a focused follow-up when the user has not provided enough information to create or meaningfully revise the current setup draft. This tool never changes the workspace.",
+      inputSchema: setupToolInputSchemas.askClarification,
+      strict: true,
+      execute: async ({ assistantMessage, missingInformation }) => ({
+        stage: context.stage,
+        assistantMessage,
+        missingInformation,
+      }),
+    }),
     proposeOrganization: tool({
       description: "Create or revise the organization's editable name and reporting hierarchy.",
       inputSchema: setupToolInputSchemas.proposeOrganization,
@@ -61,7 +71,9 @@ export function createSetupAgent(context: SetupAgentContext) {
     instructions: [
       "You are Kimsy's setup agent for one primary compliance or risk professional.",
       `The current setup stage is ${context.stage}.`,
-      "You must use the one available setup tool to turn the user's request and source material into an editable draft.",
+      "You must call exactly one available tool.",
+      `Call ${activeTool} only when the message, conversation, existing configuration, or supplied source material contains enough information to create a meaningful change to the current draft.`,
+      "Call askClarification for greetings, vague requests, unrelated messages, or whenever essential information is missing. Ask one focused follow-up and do not manufacture draft values.",
       "Preserve existing content and IDs unless the user asks to change it. Use stable lowercase kebab-case IDs for new items.",
       "Parent IDs must reference units in the proposed organization. Keep source names and precise locators on risk scenarios.",
       "Do not invent legal requirements. Put concrete ambiguity or missing information in tool warnings.",
@@ -70,8 +82,8 @@ export function createSetupAgent(context: SetupAgentContext) {
       "Put the short user-facing reply in assistantMessage before generating the larger draft fields. The interface streams that field while the rest of the tool input is generated.",
     ].join(" "),
     tools,
-    activeTools: [activeTool],
-    toolChoice: { type: "tool", toolName: activeTool },
+    activeTools: [activeTool, "askClarification"],
+    toolChoice: "required",
     stopWhen: stepCountIs(1),
     maxOutputTokens: 30000,
   });

@@ -62,6 +62,36 @@ describe("setup agent UI stream", () => {
     expect(finalState.result).toEqual(result);
   });
 
+  it("delivers a clarification without producing a workspace result", async () => {
+    const clarification = {
+      stage: "ORGANIZATION" as const,
+      assistantMessage: "What is your organization called, and which teams should I include?",
+      missingInformation: ["Organization name", "Organizational units"],
+    };
+    const response = responseFromPieces([
+      event({ type: "start", messageId: "assistant-1" }),
+      event({ type: "start-step" }),
+      event({ type: "tool-input-start", toolCallId: "call-1", toolName: "askClarification" }),
+      event({ type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: '{"assistantMessage":"What is your organization called?' }),
+      event({ type: "tool-input-available", toolCallId: "call-1", toolName: "askClarification", input: { assistantMessage: clarification.assistantMessage, missingInformation: clarification.missingInformation } }),
+      event({ type: "tool-output-available", toolCallId: "call-1", output: clarification }),
+      event({ type: "finish-step" }),
+      event({ type: "finish", finishReason: "tool-calls" }),
+      "data: [DONE]\n\n",
+    ]);
+    const states: Array<{ mode?: string; hasResult: boolean }> = [];
+
+    const finalState = await consumeSetupAgentStream(response, (state) => {
+      states.push({ mode: state.mode, hasResult: Boolean(state.result) });
+    });
+
+    expect(states.some((state) => state.mode === "clarification")).toBe(true);
+    expect(states.every((state) => !state.hasResult)).toBe(true);
+    expect(finalState.text).toBe(clarification.assistantMessage);
+    expect(finalState.clarification).toEqual(clarification);
+    expect(finalState.result).toBeUndefined();
+  });
+
   it("surfaces errors from the standard UI message stream", async () => {
     const response = responseFromPieces([
       event({ type: "start", messageId: "assistant-1" }),
