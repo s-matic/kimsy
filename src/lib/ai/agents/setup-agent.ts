@@ -79,6 +79,7 @@ export function createSetupAgent(context: SetupAgentContext) {
       "Do not invent legal requirements. Put concrete ambiguity or missing information in tool warnings.",
       "Multiplayer is not enabled: configure exactly one assessment owner and never add a reviewer.",
       "For the assessment method, follow the user's existing terminology and keep the form compact. Every calculated field needs an explicit MATRIX or THRESHOLD definition, and matrices must cover every option combination.",
+      "Use output option IDs—not labels—for every matrix cell result and threshold band result.",
       "Put the short user-facing reply in assistantMessage before generating the larger draft fields. The interface streams that field while the rest of the tool input is generated.",
     ].join(" "),
     tools,

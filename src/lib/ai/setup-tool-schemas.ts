@@ -33,8 +33,8 @@ export const setupToolInputSchemas = {
   configureAssessmentMethod: z.object({
     assistantMessage: z.string().describe("A concise message explaining the proposed assessment method and asking the user to review the workspace draft."),
     fields: z.array(fieldDefinitionSchema).describe("The complete proposed assessment field list, including calculated fields."),
-    matrixCalculations: z.array(matrixCalculationSchema).describe("All matrix calculations for calculated ratings."),
-    thresholdCalculations: z.array(thresholdCalculationSchema).describe("All weighted threshold calculations for calculated ratings."),
+    matrixCalculations: z.array(matrixCalculationSchema).describe("All matrix calculations for calculated ratings. Every cell result must be an option ID from its output field."),
+    thresholdCalculations: z.array(thresholdCalculationSchema).describe("All weighted threshold calculations for calculated ratings. Every band result must be an option ID from its output field."),
     finalRatingFieldId: z.string().describe("The ID of the field used as the assessment's final rating."),
     warnings: warningsSchema,
   }),

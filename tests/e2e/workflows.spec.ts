@@ -276,6 +276,40 @@ test("assessment options accept commas and multi-word labels without losing focu
   await expect(options).toHaveValue("Rare, Possible, Likely, Almost certain, Very High");
 });
 
+test("calculated ratings expose editable and testable matrix logic", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.goto("/setup");
+  await page.getByRole("button", { name: /Assessment design/ }).click();
+
+  const calculation = page.getByRole("region", { name: "Calculation for Inherent risk" });
+  await expect(calculation.getByText("Inherent risk = Likelihood × Financial impact", { exact: true })).toBeVisible();
+  await expect(calculation.getByLabel("Row input for Inherent risk")).toHaveValue("likelihood");
+  await expect(calculation.getByLabel("Column input for Inherent risk")).toHaveValue("financial-impact");
+  await expect(calculation.getByText("16 of 16 mapped", { exact: true })).toBeVisible();
+  const rareAndMinimal = calculation.getByLabel("Inherent risk: Rare and Minimal");
+  await expect(rareAndMinimal).toHaveValue("low");
+  await rareAndMinimal.selectOption("high");
+  await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("High");
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(page.getByText("Configuration saved and existing rows recalculated.")).toBeVisible();
+  await calculation.getByLabel("Calculation method for Inherent risk").selectOption("THRESHOLD");
+  await expect(calculation.getByText("Weighted inputs", { exact: true })).toBeVisible();
+  await expect(calculation.getByText("Rating bands", { exact: true })).toBeVisible();
+  const rareScore = calculation.getByLabel("Score for Likelihood option Rare");
+  await expect(rareScore).toHaveValue("1");
+  await calculation.getByRole("button", { name: "Add band" }).click();
+  await calculation.getByLabel("Result for rating band 1").selectOption("low");
+  await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("Low");
+  await expect(page.getByTestId("calculation-checks")).toContainText("without a rating band");
+  await rareScore.fill("1.5");
+  await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("Not configured");
+  await rareScore.fill("1");
+  await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("Low");
+  await calculation.getByLabel("Weight for Likelihood").fill("2");
+  await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("Not configured");
+});
+
 test("register values can be edited and calculated values update", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();

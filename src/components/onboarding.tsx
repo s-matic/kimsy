@@ -48,8 +48,9 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { BrandMark } from "@/components/brand-mark";
+import { CalculationMethodEditor } from "@/components/calculation-method-editor";
 import { Badge, Button, Panel } from "@/components/ui";
-import { validateConfiguration } from "@/lib/scoring";
+import { calculationValidationErrors, validateConfiguration } from "@/lib/scoring";
 import { starterConfiguration } from "@/lib/seed";
 import { useKimsy } from "@/lib/store";
 import { readJsonResponse } from "@/lib/http";
@@ -251,26 +252,17 @@ function FieldOptionsInput({ field, onChange }: { field: FieldDefinition; onChan
 
 function DesignEditor({ configuration, setConfiguration }: EditorProps) {
   const update = (id: string, patch: Partial<FieldDefinition>) => setConfiguration({ ...configuration, fields: configuration.fields.map((field) => field.id === id ? { ...field, ...patch } : field) });
+  const assessmentFields = configuration.fields.filter((field) => field.type !== "CALCULATED");
   return <div className="space-y-4">
-    <div className="flex items-center justify-between"><p className="text-xs font-semibold text-[#42504a]">Assessment fields</p><button onClick={() => setConfiguration({ ...configuration, fields: [...configuration.fields, { id: `field-${Date.now()}`, label: "New field", helpText: "", type: "SHORT_TEXT", required: false, options: [] }] })} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0f766e]"><Plus className="h-3.5 w-3.5" />Add field</button></div>
-    <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-      {configuration.fields.map((field) => <div key={field.id} className="rounded-[6px] border border-[#dfe5e2] bg-[#fbfcfc] p-3">
-        <div className="grid gap-2 sm:grid-cols-[1fr_160px_auto]"><input aria-label="Field label" className={inputClass()} value={field.label} onChange={(event) => update(field.id, { label: event.target.value })} /><select aria-label={`Type for ${field.label}`} className={inputClass()} value={field.type} onChange={(event) => update(field.id, { type: event.target.value as FieldType, options: event.target.value === "SINGLE_SELECT" || event.target.value === "MULTI_SELECT" || event.target.value === "CALCULATED" ? field.options : [] })}>{fieldTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select><button aria-label={`Remove ${field.label}`} disabled={configuration.calculations.some((calculation) => calculation.outputFieldId === field.id || (calculation.type === "MATRIX" && (calculation.rowFieldId === field.id || calculation.columnFieldId === field.id)) || (calculation.type === "THRESHOLD" && calculation.terms.some((term) => term.fieldId === field.id)))} onClick={() => setConfiguration({ ...configuration, fields: configuration.fields.filter((candidate) => candidate.id !== field.id) })} className="h-10 rounded-[5px] px-2 text-[#8b5b57] hover:bg-[#fff0ee] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 className="h-4 w-4" /></button></div>
+    <div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-[#42504a]">Assessment questions</p><p className="mt-0.5 text-[10px] text-[#7b8782]">Values the assessor enters or selects directly.</p></div><button type="button" onClick={() => setConfiguration({ ...configuration, fields: [...configuration.fields, { id: `field-${Date.now()}`, label: "New field", helpText: "", type: "SHORT_TEXT", required: false, options: [] }] })} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0f766e]"><Plus className="h-3.5 w-3.5" />Add question</button></div>
+    <div className="space-y-2">
+      {assessmentFields.map((field) => <div key={field.id} className="rounded-[6px] border border-[#dfe5e2] bg-[#fbfcfc] p-3">
+        <div className="grid gap-2 sm:grid-cols-[1fr_160px_auto]"><input aria-label="Field label" className={inputClass()} value={field.label} onChange={(event) => update(field.id, { label: event.target.value })} /><select aria-label={`Type for ${field.label}`} className={inputClass()} value={field.type} onChange={(event) => update(field.id, { type: event.target.value as FieldType, options: event.target.value === "SINGLE_SELECT" || event.target.value === "MULTI_SELECT" ? field.options : [] })}>{fieldTypes.filter((type) => type.value !== "CALCULATED").map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select><button type="button" aria-label={`Remove ${field.label}`} disabled={configuration.calculations.some((calculation) => calculation.outputFieldId === field.id || (calculation.type === "MATRIX" && (calculation.rowFieldId === field.id || calculation.columnFieldId === field.id)) || (calculation.type === "THRESHOLD" && calculation.terms.some((term) => term.fieldId === field.id)))} onClick={() => setConfiguration({ ...configuration, fields: configuration.fields.filter((candidate) => candidate.id !== field.id) })} className="h-10 rounded-[5px] px-2 text-[#8b5b57] hover:bg-[#fff0ee] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 className="h-4 w-4" /></button></div>
         <input aria-label={`Help text for ${field.label}`} className={`${inputClass()} mt-2`} value={field.helpText} onChange={(event) => update(field.id, { helpText: event.target.value })} placeholder="Helpful guidance for the assessor" />
-        {(field.type === "SINGLE_SELECT" || field.type === "MULTI_SELECT" || field.type === "CALCULATED") && <FieldOptionsInput field={field} onChange={(options) => update(field.id, { options })} />}
+        {(field.type === "SINGLE_SELECT" || field.type === "MULTI_SELECT") && <FieldOptionsInput field={field} onChange={(options) => update(field.id, { options })} />}
       </div>)}
     </div>
-    <div>
-      <p className="text-xs font-semibold text-[#42504a]">Transparent calculations</p>
-      <div className="mt-2 space-y-2">{configuration.calculations.map((calculation) => {
-        const output = configuration.fields.find((field) => field.id === calculation.outputFieldId)?.label ?? calculation.outputFieldId;
-        const description = calculation.type === "MATRIX"
-          ? `${configuration.fields.find((field) => field.id === calculation.rowFieldId)?.label ?? calculation.rowFieldId} × ${configuration.fields.find((field) => field.id === calculation.columnFieldId)?.label ?? calculation.columnFieldId} · ${calculation.cells.length} mapped combinations`
-          : `${calculation.terms.length} weighted inputs · ${calculation.bands.length} rating bands`;
-        return <div key={calculation.id} className="flex items-center justify-between rounded-[6px] border border-[#cde0db] bg-[#f2f9f7] px-3 py-2.5"><div><p className="text-xs font-semibold text-[#244b43]">{output}</p><p className="mt-0.5 text-[10px] text-[#668078]">{description}</p></div><Badge tone="success">{calculation.type === "MATRIX" ? "Matrix" : "Thresholds"}</Badge></div>;
-      })}</div>
-    </div>
-    <label className="block"><span className="text-xs font-semibold text-[#42504a]">Final rating shown in the register</span><select aria-label="Final rating field" className={`${inputClass()} mt-2`} value={configuration.finalRatingFieldId} onChange={(event) => setConfiguration({ ...configuration, finalRatingFieldId: event.target.value })}>{configuration.fields.filter((field) => field.type === "CALCULATED" || field.type === "SINGLE_SELECT").map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>
+    <div className="border-t border-[#e8e9ed] pt-4"><div className="mb-3"><p className="text-xs font-semibold text-[#42504a]">Calculated ratings</p><p className="mt-0.5 text-[10px] text-[#7b8782]">Inspect, edit, and test exactly how derived values work.</p></div><CalculationMethodEditor configuration={configuration} setConfiguration={setConfiguration} /></div>
   </div>;
 }
 
@@ -355,7 +347,7 @@ function stageReady(stage: Stage, configuration: WorkspaceConfiguration) {
   if (stage === "ORGANIZATION") return Boolean(configuration.organizationName.trim() && configuration.units.length);
   if (stage === "WORKFLOW") return Boolean(configuration.review.assessorName.trim());
   if (stage === "SCENARIOS") return configuration.scenarios.length > 0;
-  if (stage === "DESIGN") return configuration.fields.length > 0 && configuration.calculations.length > 0;
+  if (stage === "DESIGN") return configuration.fields.length > 0 && configuration.calculations.length > 0 && calculationValidationErrors(configuration).length === 0;
   return validateConfiguration(configuration).length === 0;
 }
 
@@ -383,8 +375,11 @@ function configurationChangeSummary(stage: ConfigurationStage, before: Workspace
     change.changed ? `${change.changed} changed` : "",
     change.removed ? `${change.removed} removed` : "",
   ].filter(Boolean);
-  if (stage === "DESIGN" && before.calculations.length !== after.calculations.length) {
-    details.push(`${after.calculations.length} calculations configured`);
+  if (stage === "DESIGN") {
+    const calculationChange = collectionChanges(before.calculations, after.calculations);
+    if (calculationChange.added) details.push(`${calculationChange.added} calculation${calculationChange.added === 1 ? "" : "s"} added`);
+    if (calculationChange.changed) details.push(`${calculationChange.changed} calculation${calculationChange.changed === 1 ? "" : "s"} changed`);
+    if (calculationChange.removed) details.push(`${calculationChange.removed} calculation${calculationChange.removed === 1 ? "" : "s"} removed`);
   }
   return details.join(" · ") || `${setupStages.find((item) => item.stage === stage)?.label} draft refreshed`;
 }

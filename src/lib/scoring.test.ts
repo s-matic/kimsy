@@ -7,6 +7,10 @@ function clone<T>(value: T): T {
 }
 
 describe("configurable assessment scoring", () => {
+  it("accepts the complete sample methodology", () => {
+    expect(validateConfiguration(sampleConfiguration)).toEqual([]);
+  });
+
   it("chains inherent and residual risk matrices deterministically", () => {
     const values = calculateValues(sampleConfiguration, {
       likelihood: "likely",
@@ -44,6 +48,19 @@ describe("configurable assessment scoring", () => {
     expect(validateConfiguration(configuration).some((error) => error.includes("is missing"))).toBe(true);
   });
 
+  it("reports matrix cells without a valid output rating", () => {
+    const configuration = clone(sampleConfiguration);
+    const matrix = configuration.calculations[0];
+    if (matrix.type === "MATRIX") matrix.cells[0].result = "";
+    expect(validateConfiguration(configuration).some((error) => error.includes("need a valid rating"))).toBe(true);
+  });
+
+  it("reports calculated fields without a calculation method", () => {
+    const configuration = clone(sampleConfiguration);
+    configuration.calculations = configuration.calculations.filter((calculation) => calculation.outputFieldId !== "residual-risk");
+    expect(validateConfiguration(configuration)).toContain("Residual risk needs a calculation method.");
+  });
+
   it("reports circular calculated-field dependencies", () => {
     const configuration = clone(sampleConfiguration);
     const first = configuration.calculations[0];
@@ -77,5 +94,15 @@ describe("configurable assessment scoring", () => {
       bands: [{ min: 0, max: 7, result: "low" }, { min: 7.01, max: 12, result: "high" }],
     });
     expect(calculateValues(configuration, { likelihood: "likely", "financial-impact": "major" }).aggregate).toBe("high");
+  });
+
+  it("reports reachable weighted scores that have no rating band", () => {
+    const configuration = clone(sampleConfiguration);
+    configuration.fields.push({ id: "aggregate", label: "Aggregate", helpText: "", type: "CALCULATED", required: true, options: [
+      { id: "low", label: "Low", score: 1 },
+      { id: "high", label: "High", score: 2 },
+    ] });
+    configuration.calculations.push({ id: "calc-aggregate", type: "THRESHOLD", outputFieldId: "aggregate", terms: [{ fieldId: "likelihood", weight: 1 }], bands: [{ min: 0, max: 1, result: "low" }] });
+    expect(validateConfiguration(configuration).some((error) => error.includes("without a rating band"))).toBe(true);
   });
 });
