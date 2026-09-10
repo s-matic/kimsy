@@ -16,9 +16,14 @@ export default function NewAssessmentPage() {
   const [initialBrief, setInitialBrief] = useState("");
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setInitialBrief(sessionStorage.getItem("kimsy-assessment-intent") ?? ""), 0);
+    const timeout = window.setTimeout(() => {
+      setInitialBrief(sessionStorage.getItem("kimsy-assessment-intent") ?? "");
+      const scopedUnitId = sessionStorage.getItem("kimsy-assessment-unit");
+      if (scopedUnitId && state.configuration.units.some((unit) => unit.id === scopedUnitId)) setUnitId(scopedUnitId);
+      sessionStorage.removeItem("kimsy-assessment-unit");
+    }, 0);
     return () => window.clearTimeout(timeout);
-  }, []);
+  }, [state.configuration.units]);
 
   const create = () => {
     if (!unitId || !period.trim()) return;

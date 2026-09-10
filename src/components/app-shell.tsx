@@ -11,16 +11,19 @@ import {
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
+  Radar,
   Table2,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { useKimsy } from "@/lib/store";
 
-const nav = [
+const nav: Array<{ href?: string; label: string; icon: LucideIcon; comingSoon?: boolean }> = [
   { href: "/", label: "Assistant", icon: MessageSquareText },
   { href: "/register", label: "Risk register", icon: Table2 },
   { href: "/setup", label: "Methodology", icon: LibraryBig },
+  { label: "Horizon scanning", icon: Radar, comingSoon: true },
 ];
 
 function SidebarContent({ close, compact = false, toggleCompact }: { close?: () => void; compact?: boolean; toggleCompact?: () => void }) {
@@ -32,15 +35,17 @@ function SidebarContent({ close, compact = false, toggleCompact }: { close?: () 
   return (
     <div className="flex h-full flex-col bg-[#fbfbfc] text-[#292a34]">
       <div className={`flex h-[74px] shrink-0 items-center ${compact ? "justify-center px-2" : "px-5"}`}>
-        <Link href="/" onClick={close} className="flex min-w-0 items-center gap-2.5" aria-label="Kimsy home">
-          <BrandMark className="h-7 w-7" />
-          {!compact && <span className="font-display font-display-sidebar truncate text-[26px] leading-none text-[#20212a]">Kimsy</span>}
-        </Link>
-        {close ? (
-          <button onClick={close} className="ml-auto rounded-lg p-1.5 text-[#777a88] hover:bg-[#eeeef2]" aria-label="Close navigation"><X className="h-4 w-4" /></button>
-        ) : toggleCompact ? (
-          <button onClick={toggleCompact} className={`${compact ? "absolute right-2 top-5" : "ml-auto"} rounded-lg p-1.5 text-[#777a88] hover:bg-[#eeeef2]`} aria-label={compact ? "Expand navigation" : "Collapse navigation"}>{compact ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
-        ) : null}
+        {compact && toggleCompact ? <button type="button" onClick={toggleCompact} className="group relative flex h-10 w-10 items-center justify-center rounded-[11px] hover:bg-[#eeeef2]" aria-label="Expand navigation" title="Expand navigation"><BrandMark className="h-7 w-7 transition-opacity group-hover:opacity-0" /><PanelLeftOpen className="absolute h-4 w-4 text-[#626673] opacity-0 transition-opacity group-hover:opacity-100" /></button> : <>
+          <Link href="/" onClick={close} className="flex min-w-0 items-center gap-2.5" aria-label="Kimsy home">
+            <BrandMark className="h-7 w-7" />
+            <span className="font-display font-display-sidebar truncate text-[26px] leading-none text-[#20212a]">Kimsy</span>
+          </Link>
+          {close ? (
+            <button onClick={close} className="ml-auto rounded-lg p-1.5 text-[#777a88] hover:bg-[#eeeef2]" aria-label="Close navigation"><X className="h-4 w-4" /></button>
+          ) : toggleCompact ? (
+            <button onClick={toggleCompact} className="ml-auto rounded-lg p-1.5 text-[#777a88] hover:bg-[#eeeef2]" aria-label="Collapse navigation"><PanelLeftClose className="h-4 w-4" /></button>
+          ) : null}
+        </>}
       </div>
 
       <div className={`px-3 ${compact ? "pb-2" : "pb-4"}`}>
@@ -53,11 +58,17 @@ function SidebarContent({ close, compact = false, toggleCompact }: { close?: () 
       <nav className="px-3" aria-label="Primary navigation">
         <div className="space-y-1">
           {nav.map((item) => {
+            if (item.comingSoon) return (
+              <button key={item.label} type="button" disabled title={compact ? `${item.label} · Coming soon` : undefined} className={`flex h-11 w-full cursor-not-allowed items-center rounded-[11px] text-sm font-medium text-[#8d909c] ${compact ? "justify-center px-2" : "gap-3 px-3"}`}>
+                <item.icon className="h-[17px] w-[17px] shrink-0 text-[#a5a8b2]" />
+                {!compact && <><span>{item.label}</span><span className="ml-auto rounded-full bg-[#ececf1] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-[#858895]">Coming soon</span></>}
+              </button>
+            );
             const active = item.href === "/"
               ? pathname === "/" || pathname.startsWith("/assessments")
-              : pathname.startsWith(item.href);
+              : pathname.startsWith(item.href ?? "");
             return (
-              <Link key={item.href} href={item.href} onClick={close} title={compact ? item.label : undefined} className={`flex h-11 items-center rounded-[11px] text-sm font-medium transition-colors ${compact ? "justify-center px-2" : "gap-3 px-3"} ${active ? "bg-[#ececf1] text-[#262832]" : "text-[#565967] hover:bg-[#f1f1f4] hover:text-[#292b35]"}`}>
+              <Link key={item.href} href={item.href ?? "/"} onClick={close} title={compact ? item.label : undefined} className={`flex h-11 items-center rounded-[11px] text-sm font-medium transition-colors ${compact ? "justify-center px-2" : "gap-3 px-3"} ${active ? "bg-[#ececf1] text-[#262832]" : "text-[#565967] hover:bg-[#f1f1f4] hover:text-[#292b35]"}`}>
                 <item.icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-[#5369d2]" : "text-[#777b89]"}`} />
                 {!compact && item.label}
               </Link>

@@ -165,7 +165,7 @@ export default function AssessmentWorkspacePage() {
         <DialogTitle className="sr-only">Assessment assistant</DialogTitle>
         <DialogDescription className="sr-only">Chat with Kimsy and attach source material for this assessment.</DialogDescription>
         <Panel className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 shadow-none">
-        <PanelHeader title="Assessment assistant" description="Your notes and source material stay with this assessment" action={<div className="mr-8"><Badge tone="info"><Sparkles className="mr-1 h-3 w-3" />AI assisted</Badge></div>} />
+        <PanelHeader title="Assessment assistant" description="Your notes and source material stay with this assessment" />
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {assessment.messages.map((item) => <AssessmentChatMessage key={item.id} {...item} />)}
           {streamingExchange && <><AssessmentChatMessage role="USER" text={streamingExchange.userText} sourceNames={streamingExchange.sourceNames} createdAt="Just now" /><AssessmentChatMessage role="ASSISTANT" text={streamingExchange.assistantText} createdAt="Just now" streaming /></>}

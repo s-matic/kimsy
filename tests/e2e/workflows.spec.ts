@@ -310,14 +310,34 @@ test("calculated ratings expose editable and testable matrix logic", async ({ pa
   await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("Not configured");
 });
 
-test("register values can be edited and calculated values update", async ({ page }) => {
+test("register is read-only and routes changes through the assessment workspace", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
   await page.goto("/register");
+  await expect(page.getByRole("heading", { name: "Choose an organizational unit" })).toBeVisible();
+  await page.getByRole("button", { name: "Select Retail Banking" }).click();
+  await expect(page.getByRole("button", { name: "Change unit" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expect(page.getByLabel("Likelihood")).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: /Applicable:/ })).toHaveCount(0);
+  await page.getByRole("link", { name: "Edit assessment" }).first().click();
   const likelihood = page.getByLabel("Likelihood").first();
   await likelihood.selectOption("almost-certain");
   await expect(likelihood).toHaveValue("almost-certain");
   await expect(page.getByText("Severe", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: /Transaction monitoring coverage gap/ }).click();
+  await page.getByRole("checkbox", { name: "Applicable" }).uncheck();
+  await page.goto("/register");
+  await page.getByRole("button", { name: "Select Retail Banking" }).click();
+  await expect(page.getByText("2 in scope")).toBeVisible();
+  await expect(page.getByText("Severe", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: /Not applicable/ }).click();
+  await expect(page.getByText("Transaction monitoring coverage gap", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Change unit" }).click();
+  await page.getByRole("button", { name: "Select Wealth Management" }).click();
+  await expect(page.getByText("No assessment for Wealth Management")).toBeVisible();
+  await page.getByRole("link", { name: "Start assessment" }).click();
+  await expect(page.getByLabel("Organizational unit")).toHaveValue("unit-wealth");
 });
 
 test("optional reviewer can approve a submitted assessment with a comment", async ({ page }) => {
