@@ -137,6 +137,7 @@ export const starterConfiguration: WorkspaceConfiguration = {
   organizationName: "",
   units: [],
   review: { mode: "SOLO", assessorName: "", reviewerName: "" },
+  agent: { allowedWebSources: [] },
   scenarios: [],
   fields,
   calculations,

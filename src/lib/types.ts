@@ -24,6 +24,10 @@ export interface ReviewConfiguration {
   reviewerName: string;
 }
 
+export interface GeneralAgentConfiguration {
+  allowedWebSources: string[];
+}
+
 export interface SourceCitation {
   sourceName: string;
   locator: string;
@@ -93,6 +97,7 @@ export interface WorkspaceConfiguration {
   organizationName: string;
   units: OrganizationUnit[];
   review: ReviewConfiguration;
+  agent: GeneralAgentConfiguration;
   scenarios: RiskScenario[];
   fields: FieldDefinition[];
   calculations: CalculationDefinition[];

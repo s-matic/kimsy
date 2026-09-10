@@ -25,6 +25,7 @@ describe("setup agent UI stream", () => {
         organizationName: "Example",
         units: [{ id: "example", name: "Example", parentId: null, description: "Top-level unit" }],
         review: { mode: "SOLO" as const, assessorName: "", reviewerName: "" },
+        agent: { allowedWebSources: [] },
         scenarios: [],
         fields: [],
         calculations: [],

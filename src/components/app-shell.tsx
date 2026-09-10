@@ -6,12 +6,12 @@ import { useState, type ReactNode } from "react";
 import {
   Building2,
   ChevronDown,
-  LibraryBig,
   Menu,
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
+  Settings2,
   Table2,
   X,
 } from "lucide-react";
@@ -22,7 +22,7 @@ import { useKimsy } from "@/lib/store";
 const nav: Array<{ href?: string; label: string; icon: LucideIcon; comingSoon?: boolean }> = [
   { href: "/", label: "Assistant", icon: MessageSquareText },
   { href: "/register", label: "Risk register", icon: Table2 },
-  { href: "/setup", label: "Methodology", icon: LibraryBig },
+  { href: "/settings", label: "Settings", icon: Settings2 },
   { label: "Horizon scanning", icon: Radar, comingSoon: true },
 ];
 

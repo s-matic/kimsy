@@ -78,6 +78,7 @@ test("AI setup streams into a persistent workspace draft", async ({ page }) => {
           { id: "unit-compliance", name: "Compliance", parentId: "unit-business", description: "Second line" },
         ],
         review: { mode: "SOLO", assessorName: "", reviewerName: "" },
+        agent: { allowedWebSources: [] },
         scenarios: [],
         fields: [],
         calculations: [],
@@ -217,7 +218,7 @@ test("assessment agent streams its reply before showing a reviewable proposal", 
 test("organization setup can switch between hierarchy and editable details", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.goto("/setup");
+  await page.goto("/settings");
 
   await expect(page.getByRole("button", { name: "Hierarchy", exact: true })).toHaveAttribute("aria-pressed", "true");
   const retailBanking = page.getByTestId("org-unit-unit-retail");
@@ -236,7 +237,7 @@ test("organization setup can switch between hierarchy and editable details", asy
 test("reset workspace returns to onboarding at the base URL", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.goto("/setup");
+  await page.goto("/settings");
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reset workspace" }).click();
 
@@ -247,7 +248,7 @@ test("reset workspace returns to onboarding at the base URL", async ({ page }) =
 test("risk scenarios can be searched and expanded for editing", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.goto("/setup");
+  await page.goto("/settings");
   await page.getByRole("button", { name: /Risk scenarios/ }).click();
 
   await page.getByLabel("Search risk scenarios").fill("transaction monitoring");
@@ -265,7 +266,7 @@ test("risk scenarios can be searched and expanded for editing", async ({ page })
 test("assessment options accept commas and multi-word labels without losing focus", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.goto("/setup");
+  await page.goto("/settings");
   await page.getByRole("button", { name: /Assessment design/ }).click();
 
   const options = page.getByLabel("Options for Likelihood");
@@ -276,10 +277,31 @@ test("assessment options accept commas and multi-word labels without losing focu
   await expect(options).toHaveValue("Rare, Possible, Likely, Almost certain, Very High");
 });
 
+test("general agent web sources can be normalized, saved, and removed", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "General agent" }).click();
+
+  await expect(page.getByText("Web search is not allowed", { exact: true })).toBeVisible();
+  await page.getByLabel("Allowed web source").fill("https://EBA.europa.eu/regulation-and-policy");
+  await page.getByRole("button", { name: "Add source" }).click();
+  await expect(page.getByText("eba.europa.eu", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "General agent" }).click();
+  await expect(page.getByText("eba.europa.eu", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Remove eba.europa.eu" }).click();
+  await expect(page.getByText("Web search is not allowed", { exact: true })).toBeVisible();
+});
+
 test("calculated ratings expose editable and testable matrix logic", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.goto("/setup");
+  await page.goto("/settings");
   await page.getByRole("button", { name: /Assessment design/ }).click();
 
   const calculation = page.getByRole("region", { name: "Calculation for Inherent risk" });
@@ -291,8 +313,8 @@ test("calculated ratings expose editable and testable matrix logic", async ({ pa
   await expect(rareAndMinimal).toHaveValue("low");
   await rareAndMinimal.selectOption("high");
   await expect(calculation.getByTestId("calculation-preview-result")).toHaveText("High");
-  await page.getByRole("button", { name: "Save configuration" }).click();
-  await expect(page.getByText("Configuration saved and existing rows recalculated.")).toBeVisible();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
   await calculation.getByLabel("Calculation method for Inherent risk").selectOption("THRESHOLD");
   await expect(calculation.getByText("Weighted inputs", { exact: true })).toBeVisible();
   await expect(calculation.getByText("Rating bands", { exact: true })).toBeVisible();

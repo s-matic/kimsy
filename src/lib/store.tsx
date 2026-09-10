@@ -28,6 +28,13 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function withConfigurationDefaults(configuration: WorkspaceConfiguration) {
+  return {
+    ...configuration,
+    agent: configuration.agent ?? { allowedWebSources: [] },
+  };
+}
+
 function timestamp() {
   return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date());
 }
@@ -96,7 +103,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(saved) as AppState;
         // Hydration is intentionally completed before paint so saved work cannot be overwritten.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (parsed.version === 2) setState(parsed);
+        if (parsed.version === 2) setState({ ...parsed, configuration: withConfigurationDefaults(parsed.configuration) });
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);

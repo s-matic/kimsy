@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, Clock3, FileText, MessageSquareText, Plus, SendHorizontal, Sparkles, Table2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3, FileText, MessageSquareText, Plus, SendHorizontal, Settings2, Sparkles, Table2 } from "lucide-react";
 import { Onboarding } from "@/components/onboarding";
 import { BrandMark } from "@/components/brand-mark";
 import { Badge, EmptyState, Panel, PanelHeader } from "@/components/ui";
@@ -43,7 +43,7 @@ export default function Home() {
         <textarea id="assessment-intent" rows={3} value={intent} onChange={(event) => setIntent(event.target.value)} className="w-full resize-none border-0 bg-transparent px-3 py-2 text-[15px] leading-6 text-[#2c2e38] outline-none" placeholder="What would you like to assess?" />
         <div className="flex flex-wrap items-center gap-2 px-1 pb-1">
           <Link href="/assessments/new" className="inline-flex h-9 items-center gap-2 rounded-[9px] px-2.5 text-xs font-medium text-[#777a88] hover:bg-[#f3f3f6] hover:text-[#41434e]"><FileText className="h-4 w-4" />Source material</Link>
-          <Link href="/setup" className="inline-flex h-9 items-center gap-2 rounded-[9px] px-2.5 text-xs font-medium text-[#777a88] hover:bg-[#f3f3f6] hover:text-[#41434e]"><Sparkles className="h-4 w-4" />Methodology</Link>
+          <Link href="/settings" className="inline-flex h-9 items-center gap-2 rounded-[9px] px-2.5 text-xs font-medium text-[#777a88] hover:bg-[#f3f3f6] hover:text-[#41434e]"><Settings2 className="h-4 w-4" />Settings</Link>
           <button type="submit" aria-label="Start assessment" className="ml-auto flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#25262f] text-white shadow-sm transition-all hover:scale-[1.02] hover:bg-[#3a3c47]"><SendHorizontal className="h-[18px] w-[18px]" /></button>
         </div>
       </form>
@@ -54,7 +54,7 @@ export default function Home() {
         <div className="flex flex-wrap justify-center gap-2">
           <Link href="/assessments/new" className="rounded-full border border-[#e5e5e9] bg-white px-4 py-2 text-xs font-medium text-[#5d606e] shadow-sm hover:border-[#d6d7dd] hover:text-[#292b35]">New assessment</Link>
           <Link href="/register" className="rounded-full border border-[#e5e5e9] bg-white px-4 py-2 text-xs font-medium text-[#5d606e] shadow-sm hover:border-[#d6d7dd] hover:text-[#292b35]">Review risk register</Link>
-          <Link href="/setup" className="rounded-full border border-[#e5e5e9] bg-white px-4 py-2 text-xs font-medium text-[#5d606e] shadow-sm hover:border-[#d6d7dd] hover:text-[#292b35]">Update methodology</Link>
+          <Link href="/settings" className="rounded-full border border-[#e5e5e9] bg-white px-4 py-2 text-xs font-medium text-[#5d606e] shadow-sm hover:border-[#d6d7dd] hover:text-[#292b35]">Workspace settings</Link>
           {latest && <Link href={`/assessments/${latest.id}`} className="rounded-full border border-[#e5e5e9] bg-white px-4 py-2 text-xs font-medium text-[#5d606e] shadow-sm hover:border-[#d6d7dd] hover:text-[#292b35]">Continue latest review</Link>}
         </div>
       </div>

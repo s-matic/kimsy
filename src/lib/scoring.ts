@@ -5,6 +5,7 @@ import type {
   FieldValue,
   WorkspaceConfiguration,
 } from "@/lib/types";
+import { allowedWebSourceErrors } from "@/lib/web-source-policy";
 
 function valuesEqual(left: FieldValue, right: FieldValue) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -172,6 +173,7 @@ export function validateConfiguration(configuration: WorkspaceConfiguration) {
   if (!configuration.scenarios.length) errors.push("Add at least one risk scenario.");
   if (!configuration.fields.length) errors.push("Add at least one assessment field.");
   if (!fields.has(configuration.finalRatingFieldId)) errors.push("Choose a valid final rating field.");
+  errors.push(...allowedWebSourceErrors(configuration.agent?.allowedWebSources ?? []));
 
   errors.push(...calculationValidationErrors(configuration));
   return [...new Set(errors)];

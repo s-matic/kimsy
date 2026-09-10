@@ -73,6 +73,9 @@ export const workspaceConfigurationSchema = z.object({
     assessorName: z.string(),
     reviewerName: z.string(),
   }),
+  agent: z.object({
+    allowedWebSources: z.array(z.string()),
+  }).default({ allowedWebSources: [] }),
   scenarios: z.array(riskScenarioSchema),
   fields: z.array(fieldDefinitionSchema),
   calculations: z.array(z.discriminatedUnion("type", [matrixCalculationSchema, thresholdCalculationSchema])),
