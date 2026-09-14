@@ -20,19 +20,25 @@ function proposal(patch: Partial<AssessmentProposalInput["changes"][number]> = {
 
 describe("assessment proposal guardrails", () => {
   it("accepts known scenarios, editable fields, and option IDs", () => {
-    expect(() => validateAssessmentProposal(sampleConfiguration, proposal())).not.toThrow();
+    expect(() => validateAssessmentProposal(sampleConfiguration, "scenario-cdd", proposal())).not.toThrow();
   });
 
-  it("rejects unknown scenarios and calculated fields", () => {
-    expect(() => validateAssessmentProposal(sampleConfiguration, proposal({ scenarioId: "unknown" }))).toThrow("unknown risk scenario");
-    expect(() => validateAssessmentProposal(sampleConfiguration, proposal({
+  it("rejects changes outside the open scenario and calculated fields", () => {
+    expect(() => validateAssessmentProposal(sampleConfiguration, "scenario-cdd", proposal({ scenarioId: "scenario-monitoring" }))).toThrow("outside the open risk scenario");
+    expect(() => validateAssessmentProposal(sampleConfiguration, "scenario-cdd", proposal({
       values: [{ fieldId: "residual-risk", value: "low" }],
     }))).toThrow("unknown or calculated assessment field");
   });
 
   it("requires configured option IDs rather than labels", () => {
-    expect(() => validateAssessmentProposal(sampleConfiguration, proposal({
+    expect(() => validateAssessmentProposal(sampleConfiguration, "scenario-cdd", proposal({
       values: [{ fieldId: "likelihood", value: "Rare" }],
     }))).toThrow("invalid option for Likelihood");
+  });
+
+  it("rejects multiple changes even when they target the open scenario", () => {
+    const input = proposal();
+    input.changes.push({ ...input.changes[0] });
+    expect(() => validateAssessmentProposal(sampleConfiguration, "scenario-cdd", input)).toThrow("more than one change");
   });
 });

@@ -256,31 +256,41 @@ const sampleAssessment: Assessment = {
       [{ sourceName: "Conduct Risk Policy.pdf", locator: "page 14" }],
     ),
   ],
-  messages: [
-    {
-      id: "message-1",
-      role: "USER",
-      text: "Assess Retail Banking using the attached risk update. Pay particular attention to CDD quality and the new customer profile.",
-      createdAt: "Today, 09:39",
-      sourceNames: ["Retail risk update.docx"],
+  initialBrief: "Assess Retail Banking using the latest risk update.",
+  scenarioThreads: {
+    "scenario-cdd": {
+      scenarioId: "scenario-cdd",
+      messages: [
+        {
+          id: "message-1",
+          role: "USER",
+          text: "Pay particular attention to CDD quality and the new customer profile.",
+          createdAt: "Today, 09:39",
+          sourceNames: ["Retail risk update.docx"],
+        },
+        {
+          id: "message-2",
+          role: "ASSISTANT",
+          text: "CDD risk needs attention because customer complexity increased while control performance deteriorated. I drafted values for this scenario for your review.",
+          createdAt: "Today, 09:42",
+        },
+      ],
+      sources: [
+        { id: "source-retail", name: "Retail risk update.docx", mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 242000, locators: ["Customers and services", "Controls in practice"], addedAt: "Today" },
+      ],
+      pendingProposal: null,
     },
-    {
-      id: "message-2",
-      role: "ASSISTANT",
-      text: "I found three applicable scenarios. CDD risk needs the most attention because customer complexity increased while control performance deteriorated. I drafted the register values for your review.",
-      createdAt: "Today, 09:42",
-    },
-  ],
-  sources: [
-    { id: "source-retail", name: "Retail risk update.docx", mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 242000, locators: ["Customers and services", "Controls in practice"], addedAt: "Today" },
-  ],
-  pendingProposal: null,
+    "scenario-monitoring": { scenarioId: "scenario-monitoring", messages: [], sources: [], pendingProposal: null },
+    "scenario-conduct": { scenarioId: "scenario-conduct", messages: [], sources: [], pendingProposal: null },
+    "scenario-reporting": { scenarioId: "scenario-reporting", messages: [], sources: [], pendingProposal: null },
+  },
+  auditEvents: [],
   reviewComment: "",
   updatedAt: "Today, 09:42",
 };
 
 export const emptyState: AppState = {
-  version: 2,
+  version: 3,
   onboarded: false,
   configuration: starterConfiguration,
   assessments: [],
@@ -288,7 +298,7 @@ export const emptyState: AppState = {
 };
 
 export const sampleState: AppState = {
-  version: 2,
+  version: 3,
   onboarded: true,
   configuration: sampleConfiguration,
   assessments: [sampleAssessment],

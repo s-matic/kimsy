@@ -4,6 +4,14 @@ function uiStreamEvent(value: object) {
   return `data: ${JSON.stringify(value)}\n\n`;
 }
 
+async function openSampleScenario(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Explore sample workspace" }).click();
+  await page.getByRole("link", { name: "Choose a scenario" }).click();
+  await page.getByRole("link", { name: "Edit assessment" }).first().click();
+  await expect(page).toHaveURL(/\/assessments\/[^/]+\/scenarios\/[^/]+/);
+}
+
 test("fresh workspace starts with AI-guided onboarding and can load the sample", async ({ page }) => {
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: false } }));
   await page.goto("/");
@@ -144,28 +152,37 @@ test("sample workspace creates a unit-scoped assessment conversation", async ({ 
   await expect(page.getByText("Initial assessment brief")).toBeVisible();
   await page.getByLabel("Organizational unit").selectOption({ label: "Payments Operations" });
   await page.getByLabel("Assessment period").fill("2027 planning review");
-  await page.getByRole("button", { name: "Start conversation" }).click();
-  await expect(page.getByRole("heading", { name: "Payments Operations" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Customer due diligence failure" })).toBeVisible();
-  await page.getByRole("button", { name: "Open assistant" }).click();
-  const assistant = page.getByRole("dialog", { name: "Assessment assistant" });
-  await expect(assistant.getByText("Focus on changes to outsourced payment operations.")).toBeVisible();
-  await expect(assistant.getByText("I’ve carried your initial brief")).toBeVisible();
+  await page.getByRole("button", { name: "Create assessment" }).click();
+  await expect(page.getByRole("heading", { name: "Risk register" })).toBeVisible();
+  await expect(page.locator("main").getByText("Payments Operations", { exact: true }).first()).toBeVisible();
+  await page.getByRole("link", { name: "Edit assessment" }).first().click();
+  await expect(page.getByTestId("scenario-agent")).toBeAttached();
+  await expect(page.getByTestId("scenario-form")).toBeAttached();
 });
 
-test("assessment form stays primary and the assistant opens in a dialog", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.getByRole("link", { name: "Open conversation" }).click();
-  await expect(page).toHaveURL(/\/assessments\//);
-
+test("scenario workspace keeps its focused agent beside the assessment form", async ({ page }) => {
+  await openSampleScenario(page);
   await expect(page.getByLabel("Likelihood")).toBeVisible();
-  await page.getByRole("button", { name: "Open assistant" }).click();
-  const assistant = page.getByRole("dialog", { name: "Assessment assistant" });
-  await expect(assistant).toBeVisible();
-  await expect(assistant.getByLabel("Message Kimsy")).toBeVisible();
+  await expect(page.getByText("Focused only on AML-01")).toBeAttached();
+  await expect(page.getByTestId("scenario-form").getByText("Transaction monitoring coverage gap")).toHaveCount(0);
+  const conversationTab = page.getByRole("tab", { name: "Conversation" });
+  if (await conversationTab.isVisible()) await conversationTab.click();
+  await expect(page.getByLabel("Message Kimsy")).toBeVisible();
+});
+
+test("scenario text fields autosave without losing focus and record history", async ({ page }) => {
+  await openSampleScenario(page);
+  const note = page.getByLabel("Assessment note");
+  await note.fill("Updated control evidence from the quarterly review.");
+  await page.waitForTimeout(900);
+  await expect(note).toBeFocused();
+  await page.getByRole("button", { name: /History/ }).click();
+  const history = page.getByRole("dialog", { name: "Scenario history" });
+  await expect(history.getByText("Assessment note", { exact: true }).first()).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(assistant).toBeHidden();
+  await note.fill("Updated again on blur.");
+  await page.getByRole("button", { name: /History/ }).click();
+  await expect(history.getByText("Updated again on blur.", { exact: true })).toBeVisible();
 });
 
 test("assessment agent streams its reply before showing a reviewable proposal", async ({ page }) => {
@@ -202,17 +219,27 @@ test("assessment agent streams its reply before showing a reviewable proposal", 
     });
   });
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.getByRole("link", { name: "Open conversation" }).click();
-  await page.getByRole("button", { name: "Open assistant" }).click();
-  const assistant = page.getByRole("dialog", { name: "Assessment assistant" });
-  await assistant.getByLabel("Message Kimsy").fill("Likelihood may have changed.");
-  await assistant.getByRole("button", { name: "Send" }).click();
-  await expect(assistant.getByText("Likelihood may have changed.")).toBeVisible();
-  await expect(assistant.getByText("Reviewing the assessment…")).toBeVisible();
-  await expect(assistant.getByText("I prepared one change for review.")).toBeVisible();
-  await expect(page.getByText("Proposed register changes")).toBeVisible();
+  await openSampleScenario(page);
+  const conversationTab = page.getByRole("tab", { name: "Conversation" });
+  if (await conversationTab.isVisible()) await conversationTab.click();
+  const agent = page.getByTestId("scenario-agent");
+  await agent.getByLabel("Message Kimsy").fill("Likelihood may have changed.");
+  await agent.getByRole("button", { name: "Submit" }).click();
+  await expect(agent.getByText("Likelihood may have changed.")).toBeVisible();
+  await expect(agent.getByText("Reviewing this scenario…")).toBeVisible();
+  const assessmentTab = page.getByRole("tab", { name: /Assessment/ });
+  if (await assessmentTab.isVisible()) await assessmentTab.click();
+  await expect(page.getByTestId("inline-proposal")).toBeVisible();
+  await expect(page.getByTestId("proposal-likelihood")).toContainText("Possible");
+  if (await conversationTab.isVisible()) {
+    await conversationTab.click();
+    await expect(agent.getByText("I prepared one change for review.")).toBeVisible();
+    await assessmentTab.click();
+  }
+  await page.getByRole("button", { name: "Apply proposal" }).click();
+  await expect(page.getByLabel("Likelihood")).toHaveValue("possible");
+  await page.getByRole("button", { name: /History/ }).click();
+  await expect(page.getByRole("dialog", { name: "Scenario history" }).getByText("AI proposal applied")).toBeVisible();
 });
 
 test("organization setup can switch between hierarchy and editable details", async ({ page }) => {
@@ -347,11 +374,15 @@ test("register is read-only and routes changes through the assessment workspace"
   await likelihood.selectOption("almost-certain");
   await expect(likelihood).toHaveValue("almost-certain");
   await expect(page.getByText("Severe", { exact: true }).first()).toBeVisible();
-  await page.getByRole("button", { name: /Transaction monitoring coverage gap/ }).click();
+  await page.getByRole("button", { name: /History/ }).click();
+  await expect(page.getByRole("dialog", { name: "Scenario history" }).getByText("Likelihood", { exact: true }).first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator("main").getByRole("link", { name: "Risk register" }).click();
+  const monitoringRow = page.getByText("Transaction monitoring coverage gap", { exact: true }).locator("xpath=ancestor::article");
+  await monitoringRow.getByRole("link", { name: "Edit assessment" }).click();
   await page.getByRole("checkbox", { name: "Applicable" }).uncheck();
-  await page.goto("/register");
-  await page.getByRole("button", { name: "Select Retail Banking" }).click();
-  await expect(page.getByText("2 in scope")).toBeVisible();
+  await page.locator("main").getByRole("link", { name: "Risk register" }).click();
+  await expect(page.getByText("3 in scope")).toBeVisible();
   await expect(page.getByText("Severe", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: /Not applicable/ }).click();
   await expect(page.getByText("Transaction monitoring coverage gap", { exact: true })).toBeVisible();
@@ -363,9 +394,7 @@ test("register is read-only and routes changes through the assessment workspace"
 });
 
 test("optional reviewer can approve a submitted assessment with a comment", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Explore sample workspace" }).click();
-  await page.getByRole("link", { name: "Open conversation" }).click();
+  await openSampleScenario(page);
   await page.getByRole("button", { name: "Send to reviewer" }).click();
   await page.getByLabel("View as").selectOption("REVIEWER");
   await expect(page.getByText("Independent review")).toBeVisible();

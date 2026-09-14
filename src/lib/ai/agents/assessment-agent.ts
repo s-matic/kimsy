@@ -10,11 +10,22 @@ import { validateAssessmentProposal } from "@/lib/ai/assessment-proposal";
 import { getKimsyModel } from "@/lib/ai/models";
 import type { AiSourceInput } from "@/lib/ai/source-types";
 import { assessmentRowInputSchema } from "@/lib/ai/schema";
-import type { Assessment, SourceDocument, WorkspaceConfiguration } from "@/lib/types";
+import type { AssessmentRow, AssessmentStatus, ScenarioThread, SourceDocument, WorkspaceConfiguration } from "@/lib/types";
+
+export interface ScenarioAssessmentContext {
+  id: string;
+  unitId: string;
+  period: string;
+  status: AssessmentStatus;
+  initialBrief: string;
+  row: AssessmentRow;
+  thread: ScenarioThread;
+}
 
 interface AssessmentAgentContext {
   configuration: WorkspaceConfiguration;
-  assessment: Assessment;
+  assessment: ScenarioAssessmentContext;
+  scenarioId: string;
   sources: SourceDocument[];
 }
 
@@ -37,7 +48,7 @@ export function createAssessmentAgent(context: AssessmentAgentContext) {
       inputSchema: proposalInputSchema,
       strict: true,
       execute: async (proposal): Promise<AssessmentAgentToolResult> => {
-        validateAssessmentProposal(context.configuration, proposal);
+        validateAssessmentProposal(context.configuration, context.scenarioId, proposal);
         return { ...proposal, sources: context.sources };
       },
     }),
@@ -47,10 +58,10 @@ export function createAssessmentAgent(context: AssessmentAgentContext) {
     id: "kimsy-assessment-agent",
     model: getKimsyModel("assessment"),
     instructions: [
-      "You are Kimsy's assessment agent for one compliance or risk professional.",
-      "Use only the supplied organizational unit, configured scenarios, editable assessment fields, current assessment, user message, and source material.",
+      "You are Kimsy's assessment agent for one compliance or risk professional and one open risk scenario.",
+      "Use only the supplied organizational unit, open scenario, editable assessment fields, current scenario row, scenario conversation, user message, and source material.",
       "You must call proposeRegisterChanges. It creates a draft only; never claim values were saved, applied, approved, or legally conclusive.",
-      "Use only supplied scenario IDs and editable field IDs. Never set calculated fields. Use select option IDs, not labels.",
+      "Propose changes only for the supplied open scenario ID. Never mention or change another scenario. Use only editable field IDs. Never set calculated fields. Use select option IDs, not labels.",
       "Mark a scenario not applicable only when the supplied facts support that conclusion.",
       "Give concise judgment-based rationales and precise page, paragraph, sheet, row, or image citations.",
       "When evidence is insufficient, omit unsupported field changes and explain the gap in warnings rather than guessing.",
@@ -66,10 +77,14 @@ export function createAssessmentAgent(context: AssessmentAgentContext) {
 
 export function assessmentAgentMessages(input: AssessmentPromptInput): ModelMessage[] {
   const editableFields = input.configuration.fields.filter((field) => field.type !== "CALCULATED");
+  const scenario = input.configuration.scenarios.find((item) => item.id === input.scenarioId);
+  const unit = input.configuration.units.find((item) => item.id === input.assessment.unitId);
   const text = [
     `User request: ${input.message || "Assess the attached source material."}`,
-    `Workspace configuration:\n${JSON.stringify({ ...input.configuration, fields: editableFields })}`,
-    `Current assessment and prior conversation:\n${JSON.stringify(input.assessment)}`,
+    `Open organizational unit:\n${JSON.stringify(unit)}`,
+    `Open risk scenario:\n${JSON.stringify(scenario)}`,
+    `Assessment method:\n${JSON.stringify({ fields: editableFields, calculations: input.configuration.calculations, finalRatingFieldId: input.configuration.finalRatingFieldId })}`,
+    `Current scenario assessment and its prior conversation:\n${JSON.stringify(input.assessment)}`,
     `Extracted new source material:\n${input.sourceInput.text || "No new text source supplied."}`,
   ].join("\n\n");
 

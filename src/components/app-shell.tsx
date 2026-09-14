@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import {
   Building2,
   ChevronDown,
+  FileChartColumn,
   Menu,
   MessageSquareText,
   PanelLeftClose,
@@ -24,6 +25,7 @@ const nav: Array<{ href?: string; label: string; icon: LucideIcon; comingSoon?: 
   { href: "/register", label: "Risk register", icon: Table2 },
   { href: "/settings", label: "Settings", icon: Settings2 },
   { label: "Horizon scanning", icon: Radar, comingSoon: true },
+  { label: "Reports", icon: FileChartColumn, comingSoon: true },
 ];
 
 function SidebarContent({ close, compact = false, toggleCompact }: { close?: () => void; compact?: boolean; toggleCompact?: () => void }) {
@@ -61,7 +63,7 @@ function SidebarContent({ close, compact = false, toggleCompact }: { close?: () 
             if (item.comingSoon) return (
               <button key={item.label} type="button" disabled title={compact ? `${item.label} · Coming soon` : undefined} className={`flex h-11 w-full cursor-not-allowed items-center rounded-[11px] text-sm font-medium text-[#8d909c] ${compact ? "justify-center px-2" : "gap-3 px-3"}`}>
                 <item.icon className="h-[17px] w-[17px] shrink-0 text-[#a5a8b2]" />
-                {!compact && <><span>{item.label}</span><span className="ml-auto rounded-full bg-[#ececf1] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-[#858895]">Coming soon</span></>}
+                {!compact && <><span className="min-w-0 flex-1 text-left leading-5">{item.label}</span><span className="ml-auto shrink-0 rounded-full bg-[#ececf1] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-[#858895]">Coming soon</span></>}
               </button>
             );
             const active = item.href === "/"
@@ -80,7 +82,7 @@ function SidebarContent({ close, compact = false, toggleCompact }: { close?: () 
       {!compact && <div className="mt-7 min-h-0 flex-1 overflow-y-auto px-5">
         <div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#7a7d8b]">Recent assessments</p><ChevronDown className="h-3.5 w-3.5 text-[#989aa5]" /></div>
         <div className="mt-3 space-y-1">
-          {state.assessments.length === 0 ? <p className="py-2 text-xs text-[#9699a6]">No assessments yet</p> : state.assessments.slice(0, 4).map((assessment) => <Link key={assessment.id} href={`/assessments/${assessment.id}`} onClick={close} className="block rounded-lg px-2 py-2 text-xs text-[#696c7b] hover:bg-[#f0f0f3] hover:text-[#30313b]"><span className="block truncate font-medium">{unitName(assessment.unitId)}</span><span className="mt-0.5 block truncate text-[10px] text-[#999ba7]">{assessment.period}</span></Link>)}
+          {state.assessments.length === 0 ? <p className="py-2 text-xs text-[#9699a6]">No assessments yet</p> : state.assessments.slice(0, 4).map((assessment) => <Link key={assessment.id} href={`/register?unit=${encodeURIComponent(assessment.unitId)}`} onClick={close} className="block rounded-lg px-2 py-2 text-xs text-[#696c7b] hover:bg-[#f0f0f3] hover:text-[#30313b]"><span className="block truncate font-medium">{unitName(assessment.unitId)}</span><span className="mt-0.5 block truncate text-[10px] text-[#999ba7]">{assessment.period}</span></Link>)}
         </div>
       </div>}
 

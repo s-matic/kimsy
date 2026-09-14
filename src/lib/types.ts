@@ -142,6 +142,32 @@ export interface RegisterChangeProposal {
   createdAt: string;
 }
 
+export interface ScenarioThread {
+  scenarioId: string;
+  messages: ConversationMessage[];
+  sources: SourceDocument[];
+  pendingProposal: RegisterChangeProposal | null;
+}
+
+export interface AuditChange {
+  fieldId: string;
+  label: string;
+  before: FieldValue;
+  after: FieldValue;
+}
+
+export interface AuditEvent {
+  id: string;
+  scenarioId: string;
+  actor: string;
+  actorType: "HUMAN" | "AI";
+  source: "MANUAL" | "AI_PROPOSAL";
+  action: "FIELD_UPDATED" | "RATIONALE_UPDATED" | "APPLICABILITY_UPDATED" | "PROPOSAL_APPLIED";
+  changes: AuditChange[];
+  citations: SourceCitation[];
+  createdAt: string;
+}
+
 export interface AssessmentRow {
   id: string;
   scenarioId: string;
@@ -159,15 +185,15 @@ export interface Assessment {
   period: string;
   status: AssessmentStatus;
   rows: AssessmentRow[];
-  messages: ConversationMessage[];
-  sources: SourceDocument[];
-  pendingProposal: RegisterChangeProposal | null;
+  initialBrief: string;
+  scenarioThreads: Record<string, ScenarioThread>;
+  auditEvents: AuditEvent[];
   reviewComment: string;
   updatedAt: string;
 }
 
 export interface AppState {
-  version: 2;
+  version: 3;
   onboarded: boolean;
   configuration: WorkspaceConfiguration;
   assessments: Assessment[];

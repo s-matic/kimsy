@@ -15,9 +15,13 @@ import { emptyState, sampleState } from "@/lib/seed";
 import type {
   AppState,
   Assessment,
+  AuditChange,
+  AuditEvent,
+  ConversationMessage,
   FieldValue,
   Persona,
   RegisterChangeProposal,
+  ScenarioThread,
   SourceDocument,
   WorkspaceConfiguration,
 } from "@/lib/types";
@@ -37,6 +41,18 @@ function withConfigurationDefaults(configuration: WorkspaceConfiguration) {
 
 function timestamp() {
   return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date());
+}
+
+function auditTimestamp() {
+  return new Date().toISOString();
+}
+
+function scenarioThread(scenarioId: string): ScenarioThread {
+  return { scenarioId, messages: [], sources: [], pendingProposal: null };
+}
+
+function scenarioThreads(configuration: WorkspaceConfiguration) {
+  return Object.fromEntries(configuration.scenarios.map((scenario) => [scenario.id, scenarioThread(scenario.id)]));
 }
 
 function blankRows(configuration: WorkspaceConfiguration, assessmentId: string) {
@@ -61,7 +77,94 @@ function alignAssessment(assessment: Assessment, configuration: WorkspaceConfigu
       if (row) return { ...row, values: calculateValues(configuration, row.values) };
       return blankRows({ ...configuration, scenarios: [scenario] }, assessment.id)[0];
     }),
+    scenarioThreads: Object.fromEntries(configuration.scenarios.map((scenario) => [
+      scenario.id,
+      assessment.scenarioThreads[scenario.id] ?? scenarioThread(scenario.id),
+    ])),
   };
+}
+
+
+interface LegacyAssessment extends Omit<Assessment, "initialBrief" | "scenarioThreads" | "auditEvents"> {
+  messages?: ConversationMessage[];
+  sources?: SourceDocument[];
+  pendingProposal?: RegisterChangeProposal | null;
+}
+
+interface LegacyAppState extends Omit<AppState, "version" | "assessments"> {
+  version: 2;
+  assessments: LegacyAssessment[];
+}
+
+export function migrateState(saved: AppState | LegacyAppState): AppState {
+  if (saved.version === 3) {
+    const configuration = withConfigurationDefaults(saved.configuration);
+    return {
+      ...saved,
+      configuration,
+      assessments: saved.assessments.map((assessment) => alignAssessment(assessment, configuration)),
+    };
+  }
+
+  const configuration = withConfigurationDefaults(saved.configuration);
+  return {
+    ...saved,
+    version: 3,
+    configuration,
+    assessments: saved.assessments.map((assessment) => {
+      const threads = scenarioThreads(configuration);
+      const firstScenarioId = assessment.rows.find((row) => row.applicable)?.scenarioId
+        ?? assessment.rows[0]?.scenarioId;
+      if (firstScenarioId && threads[firstScenarioId]) {
+        threads[firstScenarioId] = {
+          scenarioId: firstScenarioId,
+          messages: assessment.messages ?? [],
+          sources: assessment.sources ?? [],
+          pendingProposal: null,
+        };
+      }
+      assessment.pendingProposal?.changes.forEach((change) => {
+        const thread = threads[change.scenarioId];
+        if (!thread) return;
+        threads[change.scenarioId] = {
+          ...thread,
+          pendingProposal: { ...assessment.pendingProposal!, changes: [change] },
+        };
+      });
+      const migrated: Assessment = {
+        id: assessment.id,
+        unitId: assessment.unitId,
+        period: assessment.period,
+        status: assessment.status,
+        rows: assessment.rows,
+        initialBrief: "",
+        scenarioThreads: threads,
+        auditEvents: [],
+        reviewComment: assessment.reviewComment,
+        updatedAt: assessment.updatedAt,
+      };
+      return alignAssessment(migrated, configuration);
+    }),
+  };
+}
+
+function fieldChanges(
+  before: Record<string, FieldValue>,
+  after: Record<string, FieldValue>,
+  configuration: WorkspaceConfiguration,
+) {
+  return configuration.fields.flatMap((field): AuditChange[] => {
+    const previous = before[field.id] ?? null;
+    const next = after[field.id] ?? null;
+    return JSON.stringify(previous) === JSON.stringify(next)
+      ? []
+      : [{ fieldId: field.id, label: field.label, before: previous, after: next }];
+  });
+}
+
+function auditEvent(input: Omit<AuditEvent, "id" | "createdAt">): AuditEvent {
+  const createdAt = auditTimestamp();
+  return { ...input, id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt };
 }
 
 interface StoreValue {
@@ -77,13 +180,14 @@ interface StoreValue {
   setRowApplicability: (assessmentId: string, rowId: string, applicable: boolean) => void;
   recordAiProposal: (input: {
     assessmentId: string;
+    scenarioId: string;
     userText: string;
     assistantText: string;
     proposal: RegisterChangeProposal;
     sources: SourceDocument[];
   }) => void;
-  applyProposal: (assessmentId: string, scenarioIds: string[]) => void;
-  discardProposal: (assessmentId: string) => void;
+  applyProposal: (assessmentId: string, scenarioId: string) => void;
+  discardProposal: (assessmentId: string, scenarioId: string) => void;
   completeAssessment: (assessmentId: string) => void;
   submitForReview: (assessmentId: string) => void;
   reviewAssessment: (assessmentId: string, decision: "APPROVE" | "RETURN", comment: string) => void;
@@ -100,10 +204,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as AppState;
+        const parsed = JSON.parse(saved) as AppState | LegacyAppState;
         // Hydration is intentionally completed before paint so saved work cannot be overwritten.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (parsed.version === 2) setState({ ...parsed, configuration: withConfigurationDefaults(parsed.configuration) });
+        if (parsed.version === 2 || parsed.version === 3) setState(migrateState(parsed));
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -118,7 +222,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = useCallback((configuration: WorkspaceConfiguration) => {
     setState({
-      version: 2,
+      version: 3,
       onboarded: true,
       configuration: clone(configuration),
       assessments: [],
@@ -148,24 +252,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           period,
           status: "DRAFT",
           rows: blankRows(current.configuration, id),
-          messages: [
-            ...(initialBrief ? [{
-              id: `message-brief-${Date.now()}`,
-              role: "USER" as const,
-              text: initialBrief,
-              createdAt: `Today, ${timestamp()}`,
-            }] : []),
-            {
-              id: `message-${Date.now()}`,
-              role: "ASSISTANT",
-              text: initialBrief
-                ? "I’ve carried your initial brief into this assessment. Add any source material or context, and I’ll propose register updates for you to review."
-                : "Tell me what changed, paste your notes, or attach the material you want me to assess. I’ll propose register updates for you to review.",
-              createdAt: `Today, ${timestamp()}`,
-            },
-          ],
-          sources: [],
-          pendingProposal: null,
+          initialBrief: initialBrief ?? "",
+          scenarioThreads: scenarioThreads(current.configuration),
+          auditEvents: [],
           reviewComment: "",
           updatedAt: "Just now",
         },
@@ -178,16 +267,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateRowValue = useCallback((assessmentId: string, rowId: string, fieldId: string, value: FieldValue) => {
     setState((current) => ({
       ...current,
-      assessments: current.assessments.map((assessment) => assessment.id !== assessmentId ? assessment : {
-        ...assessment,
-        status: assessment.status === "RETURNED" ? "DRAFT" : assessment.status,
-        rows: assessment.rows.map((row) => row.id !== rowId ? row : {
-          ...row,
-          values: calculateValues(current.configuration, { ...row.values, [fieldId]: value }),
-          lastEditedBy: "HUMAN",
+      assessments: current.assessments.map((assessment) => {
+        if (assessment.id !== assessmentId) return assessment;
+        const row = assessment.rows.find((candidate) => candidate.id === rowId);
+        if (!row) return assessment;
+        const nextValues = calculateValues(current.configuration, { ...row.values, [fieldId]: value });
+        const changes = fieldChanges(row.values, nextValues, current.configuration);
+        if (!changes.length) return assessment;
+        const event = auditEvent({
+          scenarioId: row.scenarioId,
+          actor: current.configuration.review.assessorName || "Workspace owner",
+          actorType: "HUMAN",
+          source: "MANUAL",
+          action: "FIELD_UPDATED",
+          changes,
+          citations: [],
+        });
+        return {
+          ...assessment,
+          status: assessment.status === "RETURNED" ? "DRAFT" : assessment.status,
+          rows: assessment.rows.map((candidate) => candidate.id !== rowId ? candidate : {
+            ...candidate,
+            values: nextValues,
+            lastEditedBy: "HUMAN",
+            updatedAt: "Just now",
+          }),
+          auditEvents: [event, ...assessment.auditEvents],
           updatedAt: "Just now",
-        }),
-        updatedAt: "Just now",
+        };
       }),
     }));
   }, []);
@@ -195,10 +302,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateRowRationale = useCallback((assessmentId: string, rowId: string, rationale: string) => {
     setState((current) => ({
       ...current,
-      assessments: current.assessments.map((assessment) => assessment.id !== assessmentId ? assessment : {
-        ...assessment,
-        rows: assessment.rows.map((row) => row.id !== rowId ? row : { ...row, rationale, lastEditedBy: "HUMAN", updatedAt: "Just now" }),
-        updatedAt: "Just now",
+      assessments: current.assessments.map((assessment) => {
+        if (assessment.id !== assessmentId) return assessment;
+        const row = assessment.rows.find((candidate) => candidate.id === rowId);
+        if (!row || row.rationale === rationale) return assessment;
+        const event = auditEvent({
+          scenarioId: row.scenarioId,
+          actor: current.configuration.review.assessorName || "Workspace owner",
+          actorType: "HUMAN",
+          source: "MANUAL",
+          action: "RATIONALE_UPDATED",
+          changes: [{ fieldId: "rationale", label: "Assessment rationale", before: row.rationale, after: rationale }],
+          citations: [],
+        });
+        return {
+          ...assessment,
+          status: assessment.status === "RETURNED" ? "DRAFT" : assessment.status,
+          rows: assessment.rows.map((candidate) => candidate.id !== rowId ? candidate : { ...candidate, rationale, lastEditedBy: "HUMAN", updatedAt: "Just now" }),
+          auditEvents: [event, ...assessment.auditEvents],
+          updatedAt: "Just now",
+        };
       }),
     }));
   }, []);
@@ -206,16 +329,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setRowApplicability = useCallback((assessmentId: string, rowId: string, applicable: boolean) => {
     setState((current) => ({
       ...current,
-      assessments: current.assessments.map((assessment) => assessment.id !== assessmentId ? assessment : {
-        ...assessment,
-        rows: assessment.rows.map((row) => row.id !== rowId ? row : { ...row, applicable, lastEditedBy: "HUMAN", updatedAt: "Just now" }),
-        updatedAt: "Just now",
+      assessments: current.assessments.map((assessment) => {
+        if (assessment.id !== assessmentId) return assessment;
+        const row = assessment.rows.find((candidate) => candidate.id === rowId);
+        if (!row || row.applicable === applicable) return assessment;
+        const event = auditEvent({
+          scenarioId: row.scenarioId,
+          actor: current.configuration.review.assessorName || "Workspace owner",
+          actorType: "HUMAN",
+          source: "MANUAL",
+          action: "APPLICABILITY_UPDATED",
+          changes: [{ fieldId: "applicable", label: "Applicability", before: row.applicable, after: applicable }],
+          citations: [],
+        });
+        return {
+          ...assessment,
+          status: assessment.status === "RETURNED" ? "DRAFT" : assessment.status,
+          rows: assessment.rows.map((candidate) => candidate.id !== rowId ? candidate : { ...candidate, applicable, lastEditedBy: "HUMAN", updatedAt: "Just now" }),
+          auditEvents: [event, ...assessment.auditEvents],
+          updatedAt: "Just now",
+        };
       }),
     }));
   }, []);
 
   const recordAiProposal = useCallback((input: {
     assessmentId: string;
+    scenarioId: string;
     userText: string;
     assistantText: string;
     proposal: RegisterChangeProposal;
@@ -225,63 +365,100 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...current,
       assessments: current.assessments.map((assessment) => assessment.id !== input.assessmentId ? assessment : {
         ...assessment,
-        messages: [
-          ...assessment.messages,
-          {
-            id: `message-user-${Date.now()}`,
-            role: "USER",
-            text: input.userText || "Review the attached material.",
-            createdAt: `Today, ${timestamp()}`,
-            sourceNames: input.sources.map((source) => source.name),
-          },
-          {
-            id: `message-assistant-${Date.now() + 1}`,
-            role: "ASSISTANT",
-            text: input.assistantText,
-            createdAt: `Today, ${timestamp()}`,
-          },
-        ],
-        sources: [...assessment.sources, ...input.sources.filter((source) => !assessment.sources.some((item) => item.name === source.name))],
-        pendingProposal: input.proposal,
+        scenarioThreads: {
+          ...assessment.scenarioThreads,
+          [input.scenarioId]: (() => {
+            const thread = assessment.scenarioThreads[input.scenarioId] ?? scenarioThread(input.scenarioId);
+            return {
+              ...thread,
+              messages: [
+                ...thread.messages,
+                {
+                  id: `message-user-${Date.now()}`,
+                  role: "USER" as const,
+                  text: input.userText || "Review the attached material.",
+                  createdAt: `Today, ${timestamp()}`,
+                  sourceNames: input.sources.map((source) => source.name),
+                },
+                {
+                  id: `message-assistant-${Date.now() + 1}`,
+                  role: "ASSISTANT" as const,
+                  text: input.assistantText,
+                  createdAt: `Today, ${timestamp()}`,
+                },
+              ],
+              sources: [...thread.sources, ...input.sources.filter((source) => !thread.sources.some((item) => item.name === source.name))],
+              pendingProposal: input.proposal.changes.some((change) => change.scenarioId === input.scenarioId) ? input.proposal : null,
+            };
+          })(),
+        },
         updatedAt: "Just now",
       }),
     }));
   }, []);
 
-  const applyProposal = useCallback((assessmentId: string, scenarioIds: string[]) => {
+  const applyProposal = useCallback((assessmentId: string, scenarioId: string) => {
     setState((current) => ({
       ...current,
       assessments: current.assessments.map((assessment) => {
-        if (assessment.id !== assessmentId || !assessment.pendingProposal) return assessment;
-        const selected = new Set(scenarioIds);
-        const changes = new Map(assessment.pendingProposal.changes.map((change) => [change.scenarioId, change]));
+        const thread = assessment.scenarioThreads[scenarioId];
+        const proposal = thread?.pendingProposal;
+        if (assessment.id !== assessmentId || !thread || !proposal) return assessment;
+        const change = proposal.changes.find((candidate) => candidate.scenarioId === scenarioId);
+        const row = assessment.rows.find((candidate) => candidate.scenarioId === scenarioId);
+        if (!change || !row) return assessment;
+        const proposedValues = Object.fromEntries(change.values.map((item) => [item.fieldId, item.value]));
+        const nextValues = calculateValues(current.configuration, { ...row.values, ...proposedValues });
+        const changes: AuditChange[] = [
+          ...(row.applicable === change.applicable ? [] : [{ fieldId: "applicable", label: "Applicability", before: row.applicable, after: change.applicable }]),
+          ...fieldChanges(row.values, nextValues, current.configuration),
+          ...(row.rationale === change.rationale ? [] : [{ fieldId: "rationale", label: "Assessment rationale", before: row.rationale, after: change.rationale }]),
+        ];
+        const event = auditEvent({
+          scenarioId,
+          actor: "Kimsy",
+          actorType: "AI",
+          source: "AI_PROPOSAL",
+          action: "PROPOSAL_APPLIED",
+          changes,
+          citations: change.citations,
+        });
         return {
           ...assessment,
-          rows: assessment.rows.map((row) => {
-            const change = changes.get(row.scenarioId);
-            if (!change || !selected.has(row.scenarioId)) return row;
-            const proposedValues = Object.fromEntries(change.values.map((item) => [item.fieldId, item.value]));
-            return {
-              ...row,
+          status: assessment.status === "RETURNED" ? "DRAFT" : assessment.status,
+          rows: assessment.rows.map((candidate) => candidate.scenarioId !== scenarioId ? candidate : {
+              ...candidate,
               applicable: change.applicable,
-              values: calculateValues(current.configuration, { ...row.values, ...proposedValues }),
+              values: nextValues,
               rationale: change.rationale,
               citations: change.citations,
               lastEditedBy: "AI" as const,
               updatedAt: "Just now",
-            };
           }),
-          pendingProposal: null,
+          scenarioThreads: {
+            ...assessment.scenarioThreads,
+            [scenarioId]: { ...thread, pendingProposal: null },
+          },
+          auditEvents: changes.length ? [event, ...assessment.auditEvents] : assessment.auditEvents,
           updatedAt: "Just now",
         };
       }),
     }));
   }, []);
 
-  const discardProposal = useCallback((assessmentId: string) => {
+  const discardProposal = useCallback((assessmentId: string, scenarioId: string) => {
     setState((current) => ({
       ...current,
-      assessments: current.assessments.map((assessment) => assessment.id === assessmentId ? { ...assessment, pendingProposal: null } : assessment),
+      assessments: current.assessments.map((assessment) => assessment.id === assessmentId ? {
+        ...assessment,
+        scenarioThreads: {
+          ...assessment.scenarioThreads,
+          [scenarioId]: {
+            ...(assessment.scenarioThreads[scenarioId] ?? scenarioThread(scenarioId)),
+            pendingProposal: null,
+          },
+        },
+      } : assessment),
     }));
   }, []);
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -21,20 +22,26 @@ function isPresent(value: unknown) {
   return value !== null && value !== undefined && value !== "" && (!Array.isArray(value) || value.length > 0);
 }
 
-export default function RegisterPage() {
+function RegisterContent() {
   const { state } = useKimsy();
+  const searchParams = useSearchParams();
+  const fields = state.configuration.fields;
+  const units = state.configuration.units;
+  const requestedUnitId = searchParams.get("unit") ?? "";
+  const initialUnitId = units.some((unit) => unit.id === requestedUnitId)
+    ? requestedUnitId
+    : units.length === 1 ? units[0].id : "";
   const [query, setQuery] = useState("");
-  const [selectedUnitId, setSelectedUnitId] = useState(() => state.configuration.units.length === 1 ? state.configuration.units[0].id : "");
+  const [selectedUnitId, setSelectedUnitId] = useState(initialUnitId);
   const [expandedRow, setExpandedRow] = useState(() => {
-    const assessment = state.assessments[0];
+    const assessment = state.assessments.find((item) => item.unitId === initialUnitId);
     return assessment?.rows[0] ? `${assessment.id}-${assessment.rows[0].id}` : "";
   });
   const [showNotApplicable, setShowNotApplicable] = useState(false);
-  const fields = state.configuration.fields;
-  const units = state.configuration.units;
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId);
   const requiredFields = fields.filter((field) => field.required && field.type !== "CALCULATED");
   const finalRatingField = fields.find((field) => field.id === state.configuration.finalRatingFieldId);
+
   const rows = useMemo(() => state.assessments.flatMap((assessment) => assessment.rows.map((row) => ({ assessment, row }))).filter(({ assessment, row }) => {
     const scenario = state.configuration.scenarios.find((item) => item.id === row.scenarioId);
     const unit = state.configuration.units.find((item) => item.id === assessment.unitId);
@@ -75,18 +82,19 @@ export default function RegisterPage() {
         const expanded = expandedRow === key;
         const completedRequired = requiredFields.filter((field) => isPresent(row.values[field.id])).length;
         const complete = requiredFields.length > 0 && completedRequired === requiredFields.length;
+        const hasPendingProposal = Boolean(assessment.scenarioThreads[row.scenarioId]?.pendingProposal);
         return <article key={key} className={expanded ? "bg-[#fcfcfd]" : "bg-white"}>
           <div className="grid gap-3 px-4 py-3.5 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] lg:items-center">
             <button type="button" aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${scenario?.title ?? "scenario"}`} onClick={() => setExpandedRow(expanded ? "" : key)} className="group flex min-w-0 items-start gap-3 text-left">
               <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] transition-colors ${expanded ? "bg-[#e9ebfa] text-[#586ad0]" : "bg-[#f3f3f6] text-[#7d808d] group-hover:bg-[#ececf1]"}`}><ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : "-rotate-90"}`} /></span>
-              <span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[0.04em] text-[#586ad0]">{scenario?.code} · {scenario?.category}</span><span className="mt-1 block truncate text-sm font-semibold text-[#30323c] group-hover:text-[#586ad0]">{scenario?.title}</span><span className="mt-1 block truncate text-[10px] text-[#858895]">{unit?.name} · {assessment.period}</span></span>
+              <span className="min-w-0"><span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.04em] text-[#586ad0]"><span>{scenario?.code} · {scenario?.category}</span>{hasPendingProposal && <span className="rounded-full bg-[#eff1fb] px-2 py-0.5 text-[8px] text-[#586ad0]">AI proposal</span>}</span><span className="mt-1 block truncate text-sm font-semibold text-[#30323c] group-hover:text-[#586ad0]">{scenario?.title}</span><span className="mt-1 block truncate text-[10px] text-[#858895]">{unit?.name} · {assessment.period}</span></span>
             </button>
 
             <div className="flex items-center gap-2 lg:min-w-[130px]">{complete ? <CheckCircle2 className="h-4 w-4 text-[#26805f]" /> : <Circle className="h-4 w-4 text-[#a1a4af]" />}<div><p className="text-[10px] font-semibold text-[#555966]">{completedRequired} of {requiredFields.length} complete</p><p className="mt-0.5 text-[9px] text-[#9699a4]">Required questions</p></div></div>
 
             <div className="flex items-center lg:min-w-[90px]">{finalRatingField ? <RatingValue field={finalRatingField} value={row.values[finalRatingField.id] ?? null} /> : <Badge>Not rated</Badge>}</div>
 
-            <div className="flex items-center gap-3 lg:justify-end"><Link href={`/assessments/${assessment.id}`} className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-[#586ad0] hover:underline">{state.persona === "ASSESSOR" && (assessment.status === "DRAFT" || assessment.status === "RETURNED") ? "Edit assessment" : "View assessment"}<ArrowUpRight className="h-3 w-3" /></Link></div>
+            <div className="flex items-center gap-3 lg:justify-end"><Link href={`/assessments/${assessment.id}/scenarios/${encodeURIComponent(row.scenarioId)}`} className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-[#586ad0] hover:underline">{state.persona === "ASSESSOR" && (assessment.status === "DRAFT" || assessment.status === "RETURNED") ? "Edit assessment" : "View assessment"}<ArrowUpRight className="h-3 w-3" /></Link></div>
           </div>
 
           {expanded && <div className="border-t border-[#e7e8ec] bg-[#f8f8fa] px-4 py-4 sm:px-5">
@@ -106,9 +114,13 @@ export default function RegisterPage() {
         <button type="button" aria-expanded={showNotApplicable} onClick={() => setShowNotApplicable((current) => !current)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left sm:px-5"><ChevronDown className={`h-4 w-4 text-[#858895] transition-transform ${showNotApplicable ? "rotate-180" : ""}`} /><span className="text-xs font-semibold text-[#5b5e69]">Not applicable</span><Badge>{notApplicableRows.length}</Badge><span className="ml-auto text-[10px] text-[#9699a4]">Outside this unit’s current scope</span></button>
         {showNotApplicable && <div className="divide-y divide-[#e7e8ec] border-t border-[#e7e8ec]">{notApplicableRows.map(({ assessment, row }) => {
           const scenario = state.configuration.scenarios.find((item) => item.id === row.scenarioId);
-          return <div key={`${assessment.id}-${row.id}`} className="flex flex-col gap-2 bg-white px-5 py-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.04em] text-[#858895]">{scenario?.code} · {scenario?.category}</p><p className="mt-1 truncate text-xs font-semibold text-[#555966]">{scenario?.title}</p><p className="mt-1 text-[9px] text-[#9699a4]">{assessment.period}</p></div><Link href={`/assessments/${assessment.id}`} className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#686f9f] hover:underline">{state.persona === "ASSESSOR" && (assessment.status === "DRAFT" || assessment.status === "RETURNED") ? "Edit assessment" : "View assessment"}<ArrowUpRight className="h-3 w-3" /></Link></div>;
+          return <div key={`${assessment.id}-${row.id}`} className="flex flex-col gap-2 bg-white px-5 py-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.04em] text-[#858895]">{scenario?.code} · {scenario?.category}</p><p className="mt-1 truncate text-xs font-semibold text-[#555966]">{scenario?.title}</p><p className="mt-1 text-[9px] text-[#9699a4]">{assessment.period}</p></div><Link href={`/assessments/${assessment.id}/scenarios/${encodeURIComponent(row.scenarioId)}`} className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#686f9f] hover:underline">{state.persona === "ASSESSOR" && (assessment.status === "DRAFT" || assessment.status === "RETURNED") ? "Edit assessment" : "View assessment"}<ArrowUpRight className="h-3 w-3" /></Link></div>;
         })}</div>}
       </section>}</div>}
     </Panel>
   </div>;
+}
+
+export default function RegisterPage() {
+  return <Suspense fallback={<div className="min-h-72 rounded-[18px] border border-[#e3e4e9] bg-white" />}><RegisterContent /></Suspense>;
 }

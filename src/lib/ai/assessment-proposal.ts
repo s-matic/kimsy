@@ -9,13 +9,13 @@ export interface AssessmentProposalInput {
   warnings: string[];
 }
 
-export function validateAssessmentProposal(configuration: WorkspaceConfiguration, proposal: AssessmentProposalInput) {
+export function validateAssessmentProposal(configuration: WorkspaceConfiguration, scenarioId: string, proposal: AssessmentProposalInput) {
   const editableFields = configuration.fields.filter((field) => field.type !== "CALCULATED");
-  const scenarioIds = new Set(configuration.scenarios.map((scenario) => scenario.id));
   const fields = new Map(editableFields.map((field) => [field.id, field]));
+  if (proposal.changes.length > 1) throw new Error("The assessment agent proposed more than one change for the open risk scenario.");
 
   for (const change of proposal.changes) {
-    if (!scenarioIds.has(change.scenarioId)) throw new Error("The assessment agent proposed an unknown risk scenario.");
+    if (change.scenarioId !== scenarioId) throw new Error("The assessment agent proposed a change outside the open risk scenario.");
     for (const value of change.values) {
       const field = fields.get(value.fieldId);
       if (!field) throw new Error("The assessment agent proposed an unknown or calculated assessment field.");
