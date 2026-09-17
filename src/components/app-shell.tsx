@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
   Building2,
+  ClipboardCheck,
   ChevronDown,
   FileChartColumn,
   Menu,
@@ -23,6 +24,7 @@ import { useKimsy } from "@/lib/store";
 const nav: Array<{ href?: string; label: string; icon: LucideIcon; comingSoon?: boolean }> = [
   { href: "/", label: "Assistant", icon: MessageSquareText },
   { href: "/register", label: "Risk register", icon: Table2 },
+  { href: "/compliance-plans", label: "Compliance plan", icon: ClipboardCheck },
   { href: "/settings", label: "Settings", icon: Settings2 },
   { label: "Horizon scanning", icon: Radar, comingSoon: true },
   { label: "Reports", icon: FileChartColumn, comingSoon: true },
@@ -99,6 +101,7 @@ function SidebarContent({ close, compact = false, toggleCompact }: { close?: () 
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [compact, setCompact] = useState(false);
   const { state, hydrated, setPersona } = useKimsy();
@@ -107,6 +110,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!state.onboarded) return <>{children}</>;
 
   const canReview = state.configuration.review.mode === "REVIEWER";
+  const workspaceLabel = pathnameLabel(pathname);
   return (
     <div className="min-h-screen bg-[#f5f5f7]">
       <aside className={`fixed inset-y-3 left-3 z-30 hidden overflow-hidden rounded-[22px] border border-[#e5e5e9] bg-white shadow-[var(--shadow-float)] transition-[width] duration-300 lg:block ${compact ? "w-[68px]" : "w-[264px]"}`}><SidebarContent compact={compact} toggleCompact={() => setCompact((current) => !current)} /></aside>
@@ -115,11 +119,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className={`min-w-0 transition-[padding] duration-300 ${compact ? "lg:pl-[92px]" : "lg:pl-[288px]"}`}>
         <header className="sticky top-0 z-20 flex h-16 items-center bg-[#f5f5f7]/85 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
           <button className="mr-3 rounded-[10px] border border-[#e0e1e6] bg-white p-2 text-[#5c5f6d] shadow-sm hover:bg-[#f5f5f7] lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu className="h-5 w-5" /></button>
-          <p className="truncate text-xs font-medium text-[#777a88]">{state.configuration.organizationName} <span className="mx-2 text-[#c1c2c9]">/</span> Assessment workspace</p>
+          <p className="truncate text-xs font-medium text-[#777a88]">{state.configuration.organizationName} <span className="mx-2 text-[#c1c2c9]">/</span> {workspaceLabel}</p>
           {canReview && <label className="ml-auto flex items-center gap-2 text-xs text-[#737684]"><span className="hidden sm:inline">View as</span><select value={state.persona} onChange={(event) => setPersona(event.target.value as "ASSESSOR" | "REVIEWER")} className="h-9 rounded-[10px] border border-[#dfe0e5] bg-white px-3 text-xs font-semibold text-[#30323c] shadow-sm"><option value="ASSESSOR">Assessor</option><option value="REVIEWER">Reviewer</option></select></label>}
         </header>
         <main className="mx-auto w-full max-w-[1500px] px-4 pb-10 pt-2 sm:px-6 lg:px-8 lg:pb-12">{children}</main>
       </div>
     </div>
   );
+}
+
+function pathnameLabel(pathname: string) {
+  if (pathname.startsWith("/compliance-plans")) return "Compliance planning";
+  if (pathname.startsWith("/settings")) return "Settings";
+  if (pathname.startsWith("/register") || pathname.startsWith("/assessments")) return "Assessment workspace";
+  return "Workspace";
 }

@@ -10,6 +10,11 @@ export type FieldType =
 export type FieldValue = string | number | boolean | string[] | null;
 export type AssessmentStatus = "DRAFT" | "READY_FOR_REVIEW" | "RETURNED" | "APPROVED" | "COMPLETED";
 export type Persona = "ASSESSOR" | "REVIEWER";
+export type CompliancePlanStatus = "DRAFT" | "ACTIVE" | "CLOSED";
+export type ComplianceActivityType = "MONITORING" | "POLICY_REVIEW" | "TRAINING" | "ADVISORY" | "REPORTING";
+export type ComplianceActivityPriority = "HIGH" | "MEDIUM" | "LOW";
+export type ComplianceActivityCadence = "ONCE" | "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "ANNUAL";
+export type ComplianceOccurrenceStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "DEFERRED" | "CANCELLED";
 
 export interface OrganizationUnit {
   id: string;
@@ -192,10 +197,131 @@ export interface Assessment {
   updatedAt: string;
 }
 
+export interface ComplianceRiskSnapshot {
+  assessmentId: string;
+  rowId: string;
+  scenarioId: string;
+  unitId: string;
+  period: string;
+  code: string;
+  title: string;
+  category: string;
+  finalRating: FieldValue;
+  finalRatingLabel: string;
+  rationale: string;
+  citations: SourceCitation[];
+  capturedAt: string;
+}
+
+export interface CompliancePlanSource {
+  assessmentId: string;
+  unitId: string;
+  period: string;
+  status: AssessmentStatus;
+  capturedAt: string;
+  risks: ComplianceRiskSnapshot[];
+}
+
+export interface ComplianceActivitySchedule {
+  cadence: ComplianceActivityCadence;
+  startDate: string;
+  endDate: string;
+}
+
+export interface ComplianceEvidenceReference {
+  id: string;
+  kind: "FILE" | "LINK";
+  name: string;
+  url: string;
+}
+
+export interface ComplianceActivityOccurrence {
+  id: string;
+  dueDate: string;
+  status: ComplianceOccurrenceStatus;
+  outcome: string;
+  evidence: ComplianceEvidenceReference[];
+  completedAt: string;
+}
+
+export interface CompliancePlanActivity {
+  id: string;
+  unitId: string;
+  type: ComplianceActivityType;
+  title: string;
+  objective: string;
+  owner: string;
+  priority: ComplianceActivityPriority;
+  inclusionRationale: string;
+  sourceScenarioIds: string[];
+  schedule: ComplianceActivitySchedule;
+  occurrences: ComplianceActivityOccurrence[];
+  createdBy: "HUMAN" | "AI";
+  updatedAt: string;
+}
+
+export interface CompliancePlanChange {
+  operation: "ADD" | "UPDATE" | "REMOVE";
+  activityId: string;
+  type: ComplianceActivityType;
+  title: string;
+  objective: string;
+  owner: string;
+  priority: ComplianceActivityPriority;
+  inclusionRationale: string;
+  sourceScenarioIds: string[];
+  cadence: ComplianceActivityCadence;
+  startDate: string;
+  endDate: string;
+}
+
+export interface CompliancePlanChangeProposal {
+  id: string;
+  unitId: string;
+  summary: string;
+  changes: CompliancePlanChange[];
+  warnings: string[];
+  createdAt: string;
+}
+
+export interface CompliancePlanThread {
+  unitId: string;
+  messages: ConversationMessage[];
+  sources: SourceDocument[];
+  pendingProposal: CompliancePlanChangeProposal | null;
+}
+
+export interface CompliancePlanAuditEvent {
+  id: string;
+  unitId: string;
+  activityId: string;
+  actor: string;
+  actorType: "HUMAN" | "AI";
+  action: "ACTIVITY_ADDED" | "ACTIVITY_UPDATED" | "ACTIVITY_REMOVED" | "PROPOSAL_APPLIED" | "PLAN_ACTIVATED" | "PLAN_CLOSED" | "OCCURRENCE_UPDATED";
+  summary: string;
+  createdAt: string;
+}
+
+export interface CompliancePlan {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: CompliancePlanStatus;
+  unitIds: string[];
+  sources: CompliancePlanSource[];
+  activities: CompliancePlanActivity[];
+  unitThreads: Record<string, CompliancePlanThread>;
+  auditEvents: CompliancePlanAuditEvent[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppState {
-  version: 3;
+  version: 4;
   onboarded: boolean;
   configuration: WorkspaceConfiguration;
   assessments: Assessment[];
+  compliancePlans: CompliancePlan[];
   persona: Persona;
 }

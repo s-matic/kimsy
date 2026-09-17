@@ -290,17 +290,19 @@ const sampleAssessment: Assessment = {
 };
 
 export const emptyState: AppState = {
-  version: 3,
+  version: 4,
   onboarded: false,
   configuration: starterConfiguration,
   assessments: [],
+  compliancePlans: [],
   persona: "ASSESSOR",
 };
 
 export const sampleState: AppState = {
-  version: 3,
+  version: 4,
   onboarded: true,
   configuration: sampleConfiguration,
   assessments: [sampleAssessment],
+  compliancePlans: [],
   persona: "ASSESSOR",
 };

@@ -11,12 +11,18 @@ import {
   type ReactNode,
 } from "react";
 import { calculateValues } from "@/lib/scoring";
+import { generateOccurrences, isFinalizedAssessment, planActivationErrors, snapshotAssessment } from "@/lib/compliance-plan";
 import { emptyState, sampleState } from "@/lib/seed";
 import type {
   AppState,
   Assessment,
   AuditChange,
   AuditEvent,
+  ComplianceActivityOccurrence,
+  CompliancePlan,
+  CompliancePlanActivity,
+  CompliancePlanAuditEvent,
+  CompliancePlanChangeProposal,
   ConversationMessage,
   FieldValue,
   Persona,
@@ -91,13 +97,17 @@ interface LegacyAssessment extends Omit<Assessment, "initialBrief" | "scenarioTh
   pendingProposal?: RegisterChangeProposal | null;
 }
 
-interface LegacyAppState extends Omit<AppState, "version" | "assessments"> {
+interface LegacyAppState extends Omit<AppState, "version" | "assessments" | "compliancePlans"> {
   version: 2;
   assessments: LegacyAssessment[];
 }
 
-export function migrateState(saved: AppState | LegacyAppState): AppState {
-  if (saved.version === 3) {
+interface PreviousAppState extends Omit<AppState, "version" | "compliancePlans"> {
+  version: 3;
+}
+
+export function migrateState(saved: AppState | PreviousAppState | LegacyAppState): AppState {
+  if (saved.version === 4) {
     const configuration = withConfigurationDefaults(saved.configuration);
     return {
       ...saved,
@@ -106,10 +116,21 @@ export function migrateState(saved: AppState | LegacyAppState): AppState {
     };
   }
 
+  if (saved.version === 3) {
+    const configuration = withConfigurationDefaults(saved.configuration);
+    return {
+      ...saved,
+      version: 4,
+      configuration,
+      assessments: saved.assessments.map((assessment) => alignAssessment(assessment, configuration)),
+      compliancePlans: [],
+    };
+  }
+
   const configuration = withConfigurationDefaults(saved.configuration);
   return {
     ...saved,
-    version: 3,
+    version: 4,
     configuration,
     assessments: saved.assessments.map((assessment) => {
       const threads = scenarioThreads(configuration);
@@ -145,6 +166,7 @@ export function migrateState(saved: AppState | LegacyAppState): AppState {
       };
       return alignAssessment(migrated, configuration);
     }),
+    compliancePlans: [],
   };
 }
 
@@ -167,6 +189,15 @@ function auditEvent(input: Omit<AuditEvent, "id" | "createdAt">): AuditEvent {
   return { ...input, id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt };
 }
 
+function planAuditEvent(input: Omit<CompliancePlanAuditEvent, "id" | "createdAt">): CompliancePlanAuditEvent {
+  const createdAt = auditTimestamp();
+  return { ...input, id: `plan-audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt };
+}
+
+function planThread(unitId: string) {
+  return { unitId, messages: [], sources: [], pendingProposal: null };
+}
+
 interface StoreValue {
   state: AppState;
   hydrated: boolean;
@@ -175,6 +206,16 @@ interface StoreValue {
   loadSample: () => void;
   resetWorkspace: () => void;
   createAssessment: (unitId: string, period: string, initialBrief?: string) => string;
+  createCompliancePlan: (input: { name: string; startDate: string; endDate: string; assessmentIds: string[] }) => string;
+  addPlanActivity: (planId: string, unitId: string) => string;
+  updatePlanActivity: (planId: string, activityId: string, patch: Partial<Omit<CompliancePlanActivity, "id" | "unitId" | "occurrences" | "createdBy" | "updatedAt">>) => void;
+  removePlanActivity: (planId: string, activityId: string) => void;
+  recordPlanProposal: (input: { planId: string; unitId: string; userText: string; assistantText: string; proposal: CompliancePlanChangeProposal; sources: SourceDocument[] }) => void;
+  applyPlanProposal: (planId: string, unitId: string) => void;
+  discardPlanProposal: (planId: string, unitId: string) => void;
+  activateCompliancePlan: (planId: string) => string[];
+  closeCompliancePlan: (planId: string) => boolean;
+  updatePlanOccurrence: (planId: string, activityId: string, occurrenceId: string, patch: Partial<Pick<ComplianceActivityOccurrence, "status" | "outcome" | "evidence">>) => boolean;
   updateRowValue: (assessmentId: string, rowId: string, fieldId: string, value: FieldValue) => void;
   updateRowRationale: (assessmentId: string, rowId: string, rationale: string) => void;
   setRowApplicability: (assessmentId: string, rowId: string, applicable: boolean) => void;
@@ -204,10 +245,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as AppState | LegacyAppState;
+        const parsed = JSON.parse(saved) as AppState | PreviousAppState | LegacyAppState;
         // Hydration is intentionally completed before paint so saved work cannot be overwritten.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (parsed.version === 2 || parsed.version === 3) setState(migrateState(parsed));
+        if (parsed.version === 2 || parsed.version === 3 || parsed.version === 4) setState(migrateState(parsed));
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -222,10 +263,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = useCallback((configuration: WorkspaceConfiguration) => {
     setState({
-      version: 3,
+      version: 4,
       onboarded: true,
       configuration: clone(configuration),
       assessments: [],
+      compliancePlans: [],
       persona: "ASSESSOR",
     });
   }, []);
@@ -262,6 +304,244 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ],
     }));
     return id;
+  }, []);
+
+  const createCompliancePlan = useCallback((input: { name: string; startDate: string; endDate: string; assessmentIds: string[] }) => {
+    const id = `compliance-plan-${Date.now()}`;
+    setState((current) => {
+      const selected = input.assessmentIds.flatMap((assessmentId) => {
+        const assessment = current.assessments.find((item) => item.id === assessmentId);
+        return assessment && isFinalizedAssessment(assessment) ? [assessment] : [];
+      });
+      const unitIds = [...new Set(selected.map((assessment) => assessment.unitId))];
+      const createdAt = auditTimestamp();
+      const plan: CompliancePlan = {
+        id,
+        name: input.name.trim(),
+        startDate: input.startDate,
+        endDate: input.endDate,
+        status: "DRAFT",
+        unitIds,
+        sources: selected.map((assessment) => snapshotAssessment(assessment, current.configuration)),
+        activities: [],
+        unitThreads: Object.fromEntries(unitIds.map((unitId) => [unitId, planThread(unitId)])),
+        auditEvents: [],
+        createdAt,
+        updatedAt: createdAt,
+      };
+      return { ...current, compliancePlans: [plan, ...current.compliancePlans] };
+    });
+    return id;
+  }, []);
+
+  const addPlanActivity = useCallback((planId: string, unitId: string) => {
+    const activityId = `plan-activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        if (plan.id !== planId || !plan.unitIds.includes(unitId) || plan.status === "CLOSED") return plan;
+        const schedule = { cadence: "ONCE" as const, startDate: plan.startDate, endDate: plan.startDate };
+        const activity: CompliancePlanActivity = {
+          id: activityId,
+          unitId,
+          type: "MONITORING",
+          title: "",
+          objective: "",
+          owner: current.configuration.review.assessorName || "Workspace owner",
+          priority: "MEDIUM",
+          inclusionRationale: "",
+          sourceScenarioIds: [],
+          schedule,
+          occurrences: generateOccurrences(activityId, schedule, plan.startDate, plan.endDate),
+          createdBy: "HUMAN",
+          updatedAt: auditTimestamp(),
+        };
+        return {
+          ...plan,
+          activities: [...plan.activities, activity],
+          auditEvents: [planAuditEvent({ unitId, activityId, actor: current.configuration.review.assessorName || "Workspace owner", actorType: "HUMAN", action: "ACTIVITY_ADDED", summary: "Added a compliance activity." }), ...plan.auditEvents],
+          updatedAt: auditTimestamp(),
+        };
+      }),
+    }));
+    return activityId;
+  }, []);
+
+  const updatePlanActivity = useCallback((planId: string, activityId: string, patch: Partial<Omit<CompliancePlanActivity, "id" | "unitId" | "occurrences" | "createdBy" | "updatedAt">>) => {
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        if (plan.id !== planId || plan.status === "CLOSED") return plan;
+        const existing = plan.activities.find((activity) => activity.id === activityId);
+        if (!existing) return plan;
+        const schedule = patch.schedule ?? existing.schedule;
+        const updated = { ...existing, ...patch, schedule, updatedAt: auditTimestamp() };
+        updated.occurrences = generateOccurrences(activityId, schedule, plan.startDate, plan.endDate, existing.occurrences);
+        return {
+          ...plan,
+          activities: plan.activities.map((activity) => activity.id === activityId ? updated : activity),
+          auditEvents: [planAuditEvent({ unitId: existing.unitId, activityId, actor: current.configuration.review.assessorName || "Workspace owner", actorType: "HUMAN", action: "ACTIVITY_UPDATED", summary: `Updated ${updated.title || "a compliance activity"}.` }), ...plan.auditEvents],
+          updatedAt: auditTimestamp(),
+        };
+      }),
+    }));
+  }, []);
+
+  const removePlanActivity = useCallback((planId: string, activityId: string) => {
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        if (plan.id !== planId || plan.status === "CLOSED") return plan;
+        const activity = plan.activities.find((item) => item.id === activityId);
+        if (!activity) return plan;
+        return {
+          ...plan,
+          activities: plan.activities.filter((item) => item.id !== activityId),
+          auditEvents: [planAuditEvent({ unitId: activity.unitId, activityId, actor: current.configuration.review.assessorName || "Workspace owner", actorType: "HUMAN", action: "ACTIVITY_REMOVED", summary: `Removed ${activity.title || "a compliance activity"}.` }), ...plan.auditEvents],
+          updatedAt: auditTimestamp(),
+        };
+      }),
+    }));
+  }, []);
+
+  const recordPlanProposal = useCallback((input: { planId: string; unitId: string; userText: string; assistantText: string; proposal: CompliancePlanChangeProposal; sources: SourceDocument[] }) => {
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        if (plan.id !== input.planId || !plan.unitIds.includes(input.unitId)) return plan;
+        const thread = plan.unitThreads[input.unitId] ?? planThread(input.unitId);
+        return {
+          ...plan,
+          unitThreads: {
+            ...plan.unitThreads,
+            [input.unitId]: {
+              ...thread,
+              messages: [
+                ...thread.messages,
+                { id: `plan-message-user-${Date.now()}`, role: "USER", text: input.userText || "Draft this unit's compliance activities.", createdAt: `Today, ${timestamp()}`, sourceNames: input.sources.map((source) => source.name) },
+                { id: `plan-message-assistant-${Date.now() + 1}`, role: "ASSISTANT", text: input.assistantText, createdAt: `Today, ${timestamp()}` },
+              ],
+              sources: [...thread.sources, ...input.sources.filter((source) => !thread.sources.some((item) => item.name === source.name))],
+              pendingProposal: input.proposal,
+            },
+          },
+          updatedAt: auditTimestamp(),
+        };
+      }),
+    }));
+  }, []);
+
+  const applyPlanProposal = useCallback((planId: string, unitId: string) => {
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        const thread = plan.unitThreads[unitId];
+        const proposal = thread?.pendingProposal;
+        if (plan.id !== planId || !thread || !proposal || plan.status === "CLOSED") return plan;
+        let activities = [...plan.activities];
+        for (const change of proposal.changes) {
+          if (change.operation === "REMOVE") {
+            activities = activities.filter((activity) => activity.id !== change.activityId || activity.unitId !== unitId);
+            continue;
+          }
+          const existing = activities.find((activity) => activity.id === change.activityId && activity.unitId === unitId);
+          const activityId = existing?.id ?? `plan-activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const schedule = { cadence: change.cadence, startDate: change.startDate, endDate: change.endDate };
+          const next: CompliancePlanActivity = {
+            id: activityId,
+            unitId,
+            type: change.type,
+            title: change.title,
+            objective: change.objective,
+            owner: change.owner || current.configuration.review.assessorName || "Workspace owner",
+            priority: change.priority,
+            inclusionRationale: change.inclusionRationale,
+            sourceScenarioIds: change.sourceScenarioIds,
+            schedule,
+            occurrences: generateOccurrences(activityId, schedule, plan.startDate, plan.endDate, existing?.occurrences),
+            createdBy: existing?.createdBy ?? "AI",
+            updatedAt: auditTimestamp(),
+          };
+          activities = existing ? activities.map((activity) => activity.id === existing.id ? next : activity) : [...activities, next];
+        }
+        return {
+          ...plan,
+          activities,
+          unitThreads: { ...plan.unitThreads, [unitId]: { ...thread, pendingProposal: null } },
+          auditEvents: [planAuditEvent({ unitId, activityId: "", actor: "Kimsy", actorType: "AI", action: "PROPOSAL_APPLIED", summary: proposal.summary }), ...plan.auditEvents],
+          updatedAt: auditTimestamp(),
+        };
+      }),
+    }));
+  }, []);
+
+  const discardPlanProposal = useCallback((planId: string, unitId: string) => {
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        const thread = plan.unitThreads[unitId];
+        return plan.id === planId && thread ? { ...plan, unitThreads: { ...plan.unitThreads, [unitId]: { ...thread, pendingProposal: null } } } : plan;
+      }),
+    }));
+  }, []);
+
+  const activateCompliancePlan = useCallback((planId: string) => {
+    const plan = state.compliancePlans.find((item) => item.id === planId);
+    if (!plan) return ["Compliance plan not found."];
+    const errors = planActivationErrors(plan);
+    if (errors.length) return errors;
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((item) => item.id !== planId ? item : {
+        ...item,
+        status: "ACTIVE",
+        auditEvents: [planAuditEvent({ unitId: "", activityId: "", actor: current.configuration.review.assessorName || "Workspace owner", actorType: "HUMAN", action: "PLAN_ACTIVATED", summary: "Activated the compliance plan." }), ...item.auditEvents],
+        updatedAt: auditTimestamp(),
+      }),
+    }));
+    return [];
+  }, [state.compliancePlans]);
+
+  const closeCompliancePlan = useCallback((planId: string) => {
+    const plan = state.compliancePlans.find((item) => item.id === planId);
+    if (!plan || plan.status !== "ACTIVE") return false;
+    const occurrences = plan.activities.flatMap((activity) => activity.occurrences);
+    if (!occurrences.length || occurrences.some((occurrence) => !["COMPLETED", "DEFERRED", "CANCELLED"].includes(occurrence.status))) return false;
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((item) => item.id !== planId ? item : {
+        ...item,
+        status: "CLOSED",
+        auditEvents: [planAuditEvent({ unitId: "", activityId: "", actor: current.configuration.review.assessorName || "Workspace owner", actorType: "HUMAN", action: "PLAN_CLOSED", summary: "Closed the compliance plan." }), ...item.auditEvents],
+        updatedAt: auditTimestamp(),
+      }),
+    }));
+    return true;
+  }, [state.compliancePlans]);
+
+  const updatePlanOccurrence = useCallback((planId: string, activityId: string, occurrenceId: string, patch: Partial<Pick<ComplianceActivityOccurrence, "status" | "outcome" | "evidence">>) => {
+    if (patch.status === "COMPLETED" && !patch.outcome?.trim()) return false;
+    setState((current) => ({
+      ...current,
+      compliancePlans: current.compliancePlans.map((plan) => {
+        if (plan.id !== planId || plan.status !== "ACTIVE") return plan;
+        const activity = plan.activities.find((item) => item.id === activityId);
+        const occurrence = activity?.occurrences.find((item) => item.id === occurrenceId);
+        if (!activity || !occurrence) return plan;
+        const nextOccurrence = {
+          ...occurrence,
+          ...patch,
+          completedAt: patch.status === "COMPLETED" ? (occurrence.completedAt || auditTimestamp()) : patch.status ? "" : occurrence.completedAt,
+        };
+        return {
+          ...plan,
+          activities: plan.activities.map((item) => item.id !== activityId ? item : { ...item, occurrences: item.occurrences.map((candidate) => candidate.id === occurrenceId ? nextOccurrence : candidate), updatedAt: auditTimestamp() }),
+          auditEvents: [planAuditEvent({ unitId: activity.unitId, activityId, actor: current.configuration.review.assessorName || "Workspace owner", actorType: "HUMAN", action: "OCCURRENCE_UPDATED", summary: `Updated the ${occurrence.dueDate} occurrence of ${activity.title}.` }), ...plan.auditEvents],
+          updatedAt: auditTimestamp(),
+        };
+      }),
+    }));
+    return true;
   }, []);
 
   const updateRowValue = useCallback((assessmentId: string, rowId: string, fieldId: string, value: FieldValue) => {
@@ -498,6 +778,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadSample,
     resetWorkspace,
     createAssessment,
+    createCompliancePlan,
+    addPlanActivity,
+    updatePlanActivity,
+    removePlanActivity,
+    recordPlanProposal,
+    applyPlanProposal,
+    discardPlanProposal,
+    activateCompliancePlan,
+    closeCompliancePlan,
+    updatePlanOccurrence,
     updateRowValue,
     updateRowRationale,
     setRowApplicability,
@@ -516,6 +806,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadSample,
     resetWorkspace,
     createAssessment,
+    createCompliancePlan,
+    addPlanActivity,
+    updatePlanActivity,
+    removePlanActivity,
+    recordPlanProposal,
+    applyPlanProposal,
+    discardPlanProposal,
+    activateCompliancePlan,
+    closeCompliancePlan,
+    updatePlanOccurrence,
     updateRowValue,
     updateRowRationale,
     setRowApplicability,

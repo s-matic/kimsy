@@ -33,7 +33,8 @@ describe("workspace storage migration", () => {
     const migrated = migrateState(legacy as never);
     const result = migrated.assessments[0];
 
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(4);
+    expect(migrated.compliancePlans).toEqual([]);
     expect(result.auditEvents).toEqual([]);
     expect(Object.keys(result.scenarioThreads)).toEqual(sampleState.configuration.scenarios.map((scenario) => scenario.id));
     expect(result.scenarioThreads["scenario-cdd"].messages[0].text).toBe("Legacy context");
