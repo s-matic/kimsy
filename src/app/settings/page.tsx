@@ -93,6 +93,7 @@ export default function SettingsPage() {
   const reset = () => {
     if (!window.confirm("Reset this browser workspace and return to onboarding?")) return;
     resetWorkspace();
+    sessionStorage.setItem("kimsy-setup-started", "1");
     router.replace("/");
   };
 

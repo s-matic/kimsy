@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, Clock3, FileText, MessageSquareText, Plus, SendHorizontal, Settings2, Sparkles, Table2 } from "lucide-react";
+import { Landing } from "@/components/landing";
 import { Onboarding } from "@/components/onboarding";
 import { BrandMark } from "@/components/brand-mark";
 import { Badge, EmptyState, Panel, PanelHeader } from "@/components/ui";
@@ -20,9 +21,10 @@ function statusBadge(status: AssessmentStatus) {
 export default function Home() {
   const router = useRouter();
   const [intent, setIntent] = useState("");
+  const [started, setStarted] = useState(() => typeof window !== "undefined" && sessionStorage.getItem("kimsy-setup-started") === "1");
   const { state, hydrated } = useKimsy();
   if (!hydrated) return null;
-  if (!state.onboarded) return <Onboarding />;
+  if (!state.onboarded) return started ? <Onboarding /> : <Landing onStart={() => { sessionStorage.setItem("kimsy-setup-started", "1"); setStarted(true); }} />;
 
   const latest = state.assessments[0];
   const firstName = state.configuration.review.assessorName.split(" ")[0] || "there";

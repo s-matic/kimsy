@@ -12,9 +12,18 @@ async function openSampleScenario(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/assessments\/[^/]+\/scenarios\/[^/]+/);
 }
 
+test("first visit shows the landing page before onboarding", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Replace your risk spreadsheet with a conversation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Build it with Kimsy" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Start your workspace" }).click();
+  await expect(page.getByRole("heading", { name: "Build it with Kimsy" })).toBeVisible();
+});
+
 test("fresh workspace starts with AI-guided onboarding and can load the sample", async ({ page }) => {
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { configured: false } }));
   await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).first().click();
   await expect(page.getByRole("heading", { name: "Build it with Kimsy" })).toBeVisible();
   await expect(page.getByText("AI setup needs an API key")).toBeVisible();
   const prompt = page.getByLabel("Message Kimsy");
@@ -61,6 +70,7 @@ test("vague setup messages ask for clarification without updating the workspace"
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).first().click();
   await page.getByLabel("Message Kimsy").fill("hi");
   await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByText("hi", { exact: true })).toBeVisible();
@@ -114,6 +124,7 @@ test("AI setup streams into a persistent workspace draft", async ({ page }) => {
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).first().click();
   const prompt = page.getByLabel("Message Kimsy");
   await prompt.fill("We have a business team with compliance as second line.");
   await page.getByRole("button", { name: "Submit" }).click();
