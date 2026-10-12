@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+.env*
+!.env.example
+Dockerfile
+.dockerignore
+README.md
+tests
+test-results
+playwright-report
+coverage
+*.tsbuildinfo
+.DS_Store
